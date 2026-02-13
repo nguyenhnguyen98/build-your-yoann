@@ -82,7 +82,7 @@
   }
   .timer-bar.warn { background: #e53e3e; }
 
-  .diff-btns { display: flex; gap: 10px; }
+  .diff-btns { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
   .diff-btn {
     padding: 10px 20px; border: 3px solid var(--border); border-radius: 12px;
     background: var(--panel); font-family: 'Nunito', sans-serif;
@@ -131,10 +131,6 @@
   .tray-item:hover { border-color: var(--accent); transform: translateY(-2px); }
   .tray-item img { max-width: 100%; max-height: 100%; pointer-events: none; -webkit-user-drag: none; }
   .tray-item.placed { opacity: 0.2; pointer-events: none; border-style: dashed; }
-  .tray-item .tray-lbl {
-    position: absolute; bottom: 1px; font-size: 0.5rem;
-    font-weight: 800; color: #a09080; text-transform: uppercase;
-  }
 
   /* ===== SCORE ===== */
   .compare-row { display: flex; gap: 14px; }
@@ -209,9 +205,10 @@
   <h2>Ready?</h2>
   <p class="sub">How long do you want to memorize the face?</p>
   <div class="diff-btns">
-    <button class="diff-btn" onclick="startMemorize(5000)">Easy<small>5 sec</small></button>
-    <button class="diff-btn" onclick="startMemorize(3000)">Medium<small>3 sec</small></button>
-    <button class="diff-btn" onclick="startMemorize(1000)">Hard<small>1 sec</small></button>
+    <button class="diff-btn" onclick="startMemorize(5000, false)">Easy<small>5 sec</small></button>
+    <button class="diff-btn" onclick="startMemorize(3000, false)">Medium<small>3 sec</small></button>
+    <button class="diff-btn" onclick="startMemorize(1000, false)">Hard<small>1 sec</small></button>
+    <button class="diff-btn" onclick="startMemorize(100, true)" style="border-color: #e53e3e; color: #e53e3e;">Extreme<small>0.1 sec 🔥</small></button>
   </div>
 </div>
 
@@ -230,6 +227,28 @@
       <button class="btn btn-ghost" style="padding:6px 14px; font-size:0.75rem;" onclick="resetPlay()">↩ Reset</button>
     </div>
     <div class="face-canvas play-canvas" id="playCanvas"></div>
+
+    <!-- Transform Controls (only visible in Extreme mode when part is selected) -->
+    <div id="transformControls" style="display:none; width:320px; padding:8px 12px; background:var(--panel); border:2px solid var(--border); border-radius:12px; margin-top:4px;">
+      <div style="font-size:0.7rem; font-weight:800; color:var(--accent); text-align:center; margin-bottom:6px;" id="selectedPartLabel"></div>
+      <div style="display:flex; gap:12px; align-items:center;">
+        <div style="flex:1;">
+          <label style="font-size:0.65rem; font-weight:800; color:#8a7a6a; display:block; margin-bottom:2px;">Rotation</label>
+          <input type="range" id="rotationSlider" min="-180" max="180" value="0" step="1"
+                 oninput="adjustTransform()"
+                 style="width:100%; accent-color:var(--accent);">
+          <div style="font-size:0.6rem; color:#a09080; text-align:center;" id="rotationValue">0°</div>
+        </div>
+        <div style="flex:1;">
+          <label style="font-size:0.65rem; font-weight:800; color:#8a7a6a; display:block; margin-bottom:2px;">Zoom</label>
+          <input type="range" id="zoomSlider" min="50" max="150" value="100" step="1"
+                 oninput="adjustTransform()"
+                 style="width:100%; accent-color:var(--accent);">
+          <div style="font-size:0.6rem; color:#a09080; text-align:center;" id="zoomValue">100%</div>
+        </div>
+      </div>
+    </div>
+
     <div class="tray" id="tray"></div>
     <button class="btn btn-primary" id="doneBtn" onclick="submitAnswer()">✓ Done</button>
   </div>
@@ -306,11 +325,14 @@ const IMAGE_PATHS = {
 
 // ============ STATE ============
 let parts = {}; // key -> { img:Image, dataUrl, x, y, w }
-let playerPos = {}; // key -> { x, y, placed }
+let playerPos = {}; // key -> { x, y, placed, userRotation, userScale }
 let dragState = null;
 let originalFaceUrl = null;
 let baseFaceUrl = null;
 let baseFaceNatW = CALIBRATION.baseFaceNatW;
+let isExtremeMode = false; // Extreme difficulty flag
+let partTransforms = {}; // key -> { rotation, scale } for extreme mode (random)
+let selectedPart = null; // Currently selected part key for transform controls
 
 // ============ INITIALIZATION ============
 function init() {
@@ -375,7 +397,8 @@ function preloadImages() {
 }
 
 // ============ MEMORIZE ============
-function startMemorize(ms) {
+function startMemorize(ms, extreme = false) {
+  isExtremeMode = extreme;
   show('memScreen');
   const canvas = document.getElementById('memCanvas');
   canvas.innerHTML = '';
@@ -408,6 +431,24 @@ function startMemorize(ms) {
 function startPlay() {
   show('playScreen');
   playerPos = {};
+  selectedPart = null;
+
+  // Hide/show controls based on mode
+  const controls = document.getElementById('transformControls');
+  controls.style.display = 'none';
+
+  // Generate random transforms for extreme mode
+  if (isExtremeMode) {
+    PART_KEYS.forEach(k => {
+      partTransforms[k] = {
+        rotation: Math.random() * 360 - 180, // -180 to 180 degrees
+        scale: 0.7 + Math.random() * 0.6     // 0.7 to 1.3x scale
+      };
+    });
+  } else {
+    partTransforms = {};
+  }
+
   renderPlayCanvas();
   renderTray();
 }
@@ -415,6 +456,15 @@ function startPlay() {
 function renderPlayCanvas() {
   const canvas = document.getElementById('playCanvas');
   canvas.innerHTML = '';
+
+  // Click on empty space to deselect
+  canvas.onclick = () => {
+    if (isExtremeMode) {
+      selectedPart = null;
+      document.getElementById('transformControls').style.display = 'none';
+      renderPlayCanvas();
+    }
+  };
 
   if (baseFaceUrl) {
     const bg = document.createElement('img');
@@ -436,10 +486,72 @@ function renderPlayCanvas() {
     el.style.width = p.w + 'px';
     el.style.height = 'auto';
     el.style.zIndex = i + 5;
+
+    // Apply transforms
+    let transform = 'translate(-50%, -50%)';
+    if (isExtremeMode && partTransforms[k]) {
+      const t = partTransforms[k];
+      const userRot = pp.userRotation || 0;
+      const userScale = pp.userScale || 1;
+      const finalRot = t.rotation + userRot;
+      const finalScale = t.scale * userScale;
+      transform += ` rotate(${finalRot}deg) scale(${finalScale})`;
+    }
+    el.style.transform = transform;
+
+    // Highlight if selected
+    if (selectedPart === k) {
+      el.style.outline = '3px solid var(--accent)';
+      el.style.outlineOffset = '2px';
+    }
+
     el.addEventListener('mousedown', e => playDragStart(e, k));
     el.addEventListener('touchstart', e => playDragStart(e, k));
+    el.addEventListener('click', e => { e.stopPropagation(); if (isExtremeMode) selectPart(k); });
     canvas.appendChild(el);
   });
+}
+
+function selectPart(key) {
+  if (!isExtremeMode) return;
+
+  selectedPart = key;
+  const pp = playerPos[key];
+
+  // Show controls
+  const controls = document.getElementById('transformControls');
+  controls.style.display = 'block';
+
+  // Update label
+  document.getElementById('selectedPartLabel').textContent = PART_LABELS[key];
+
+  // Set slider values
+  const userRot = pp.userRotation || 0;
+  const userScale = pp.userScale || 1;
+
+  document.getElementById('rotationSlider').value = userRot;
+  document.getElementById('rotationValue').textContent = Math.round(userRot) + '°';
+
+  document.getElementById('zoomSlider').value = Math.round(userScale * 100);
+  document.getElementById('zoomValue').textContent = Math.round(userScale * 100) + '%';
+
+  renderPlayCanvas();
+}
+
+function adjustTransform() {
+  if (!selectedPart || !playerPos[selectedPart]) return;
+
+  const rotation = parseFloat(document.getElementById('rotationSlider').value);
+  const zoom = parseFloat(document.getElementById('zoomSlider').value) / 100;
+
+  playerPos[selectedPart].userRotation = rotation;
+  playerPos[selectedPart].userScale = zoom;
+
+  // Update display values
+  document.getElementById('rotationValue').textContent = Math.round(rotation) + '°';
+  document.getElementById('zoomValue').textContent = Math.round(zoom * 100) + '%';
+
+  renderPlayCanvas();
 }
 
 function renderTray() {
@@ -449,11 +561,18 @@ function renderTray() {
     const p = parts[k];
     if (!p) return '';
     const placed = playerPos[k]?.placed;
+
+    // Apply random transforms in extreme mode
+    let imgStyle = '';
+    if (isExtremeMode && partTransforms[k]) {
+      const t = partTransforms[k];
+      imgStyle = `style="transform: rotate(${t.rotation}deg) scale(${t.scale});"`;
+    }
+
     return `<div class="tray-item ${placed?'placed':''}" data-key="${k}"
                  onmousedown="trayDragStart(event,'${k}')"
                  ontouchstart="trayDragStart(event,'${k}')">
-      <img src="${p.dataUrl}">
-      <span class="tray-lbl">${PART_LABELS[k]}</span>
+      <img src="${p.dataUrl}" ${imgStyle}>
     </div>`;
   }).join('');
 }
@@ -470,6 +589,13 @@ function trayDragStart(e, key) {
   ghost.style.cssText = `position:fixed;pointer-events:none;z-index:9999;width:${p.w}px;height:auto;opacity:0.8;filter:drop-shadow(0 3px 8px rgba(0,0,0,0.2));`;
   ghost.style.left = (cx - p.w/2) + 'px';
   ghost.style.top = (cy - 20) + 'px';
+
+  // Apply transforms in extreme mode
+  if (isExtremeMode && partTransforms[key]) {
+    const t = partTransforms[key];
+    ghost.style.transform = `rotate(${t.rotation}deg) scale(${t.scale})`;
+  }
+
   document.body.appendChild(ghost);
 
   dragState = { ctx:'tray', key, ghost, w:p.w };
@@ -524,9 +650,14 @@ function endDrag(e) {
     if (cx >= cr.left && cx <= cr.right && cy >= cr.top && cy <= cr.bottom) {
       const xp = ((cx-cr.left)/cr.width)*100;
       const yp = ((cy-cr.top)/cr.height)*100;
-      playerPos[dragState.key] = { x:xp, y:yp, placed:true };
+      playerPos[dragState.key] = { x:xp, y:yp, placed:true, userRotation:0, userScale:1 };
       renderPlayCanvas();
       renderTray();
+
+      // Auto-select in extreme mode for easy adjustment
+      if (isExtremeMode) {
+        selectPart(dragState.key);
+      }
     }
   } else if (dragState.ctx === 'playMove') {
     dragState.el.classList.remove('dragging');
@@ -544,6 +675,8 @@ function endDrag(e) {
 
 function resetPlay() {
   playerPos = {};
+  selectedPart = null;
+  document.getElementById('transformControls').style.display = 'none';
   renderPlayCanvas();
   renderTray();
 }
@@ -602,7 +735,19 @@ function showScoreScreen(score) {
       const el = document.createElement('img');
       el.src = t.dataUrl;
       el.className = 'part-img';
-      el.style.cssText = `left:${pp.x}%;top:${pp.y}%;width:${t.w*scale}px;height:auto;z-index:${i+5};`;
+      let transform = 'translate(-50%, -50%)';
+
+      // Apply transforms in extreme mode
+      if (isExtremeMode && partTransforms[k]) {
+        const tf = partTransforms[k];
+        const userRot = pp.userRotation || 0;
+        const userScale = pp.userScale || 1;
+        const finalRot = tf.rotation + userRot;
+        const finalScale = tf.scale * userScale;
+        transform += ` rotate(${finalRot}deg) scale(${finalScale})`;
+      }
+
+      el.style.cssText = `left:${pp.x}%;top:${pp.y}%;width:${t.w*scale}px;height:auto;z-index:${i+5};transform:${transform};`;
       yc.appendChild(el);
     }
     const g = document.createElement('div');
