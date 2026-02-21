@@ -26,91 +26,33 @@
     user-select: none;
     cursor: none;
   }
+  canvas { display: block; cursor: none; }
 
-  canvas {
-    display: block;
-    width: 100vw;
-    height: 100vh;
-    cursor: none;
-  }
-
-  /* Title / Instructions overlay */
   #instructions {
-    position: fixed;
-    top: 24px;
-    left: 50%;
-    transform: translateX(-50%);
-    text-align: center;
-    z-index: 10;
-    pointer-events: none;
-    transition: opacity 0.6s;
+    position: fixed; top: 24px; left: 50%; transform: translateX(-50%);
+    text-align: center; z-index: 10; pointer-events: none; transition: opacity 0.6s;
   }
   #instructions h1 {
-    font-family: 'Fredoka One', cursive;
-    font-size: 1.8rem;
-    color: var(--accent);
-    margin-bottom: 4px;
-    text-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    font-family: 'Fredoka One', cursive; font-size: 1.8rem; color: var(--accent);
+    margin-bottom: 4px; text-shadow: 0 2px 8px rgba(0,0,0,0.06);
   }
-  #instructions .sub {
-    font-weight: 700;
-    color: #8a7a6a;
-    font-size: 0.85rem;
-    line-height: 1.5;
-  }
+  #instructions .sub { font-weight: 700; color: #8a7a6a; font-size: 0.85rem; line-height: 1.5; }
 
-  /* Best score corner */
   #bestScore {
-    position: fixed;
-    top: 16px;
-    right: 20px;
-    z-index: 10;
-    text-align: right;
-    pointer-events: none;
+    position: fixed; top: 16px; right: 20px; z-index: 10;
+    text-align: right; pointer-events: none;
   }
-  #bestScore .label {
-    font-weight: 800;
-    font-size: 0.6rem;
-    color: #a09080;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-  }
-  #bestScore .value {
-    font-family: 'Fredoka One', cursive;
-    font-size: 1.6rem;
-    color: var(--accent);
-  }
+  #bestScore .label { font-weight: 800; font-size: 0.6rem; color: #a09080; text-transform: uppercase; letter-spacing: 1px; }
+  #bestScore .value { font-family: 'Fredoka One', cursive; font-size: 1.6rem; color: var(--accent); }
 
-  /* Score display above center dot */
   #scoreDisplay {
-    position: fixed;
-    top: 0; left: 0;
-    z-index: 15;
-    pointer-events: none;
-    text-align: center;
-    opacity: 0;
-    transition: opacity 0.4s, transform 0.4s;
-    transform: translateY(10px);
+    position: fixed; top: 0; left: 0; z-index: 15; pointer-events: none;
+    text-align: center; opacity: 0; transition: opacity 0.4s, transform 0.4s; transform: translateY(10px);
   }
-  #scoreDisplay.show {
-    opacity: 1;
-    transform: translateY(0);
-  }
-  #scoreDisplay .score-value {
-    font-family: 'Fredoka One', cursive;
-    font-size: 3rem;
-    line-height: 1;
-  }
-  #scoreDisplay .score-pct {
-    font-family: 'Fredoka One', cursive;
-    font-size: 1.2rem;
-    opacity: 0.7;
-  }
-  #scoreDisplay .score-label {
-    font-family: 'Fredoka One', cursive;
-    font-size: 1rem;
-    margin-top: 2px;
-  }
+  #scoreDisplay.show { opacity: 1; transform: translateY(0); }
+  #scoreDisplay .score-value { font-family: 'Fredoka One', cursive; font-size: 3rem; line-height: 1; }
+  #scoreDisplay .score-pct { font-family: 'Fredoka One', cursive; font-size: 1.2rem; opacity: 0.7; }
+  #scoreDisplay .score-label { font-family: 'Fredoka One', cursive; font-size: 1rem; margin-top: 2px; }
 </style>
 </head>
 <body>
@@ -136,14 +78,33 @@
 <script>
 // ============ CANVAS SETUP ============
 const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d');
+const ctx = canvas.getContext('2d', { alpha: false });
+
+// Cached dot grid — redrawn only on resize
+let gridCanvas = null;
+
+function buildGridCache(w, h) {
+  gridCanvas = document.createElement('canvas');
+  gridCanvas.width = w;
+  gridCanvas.height = h;
+  const gc = gridCanvas.getContext('2d');
+  gc.fillStyle = 'rgba(180,164,144,0.18)';
+  const spacing = 32;
+  for (let x = 0; x < w; x += spacing) {
+    for (let y = 0; y < h; y += spacing) {
+      gc.beginPath();
+      gc.arc(x, y, 1.2, 0, Math.PI * 2);
+      gc.fill();
+    }
+  }
+}
 
 function resize() {
   canvas.width = window.innerWidth;
   canvas.height = window.innerHeight;
-  // Reposition center dot on resize
   centerDot.x = canvas.width / 2;
   centerDot.y = canvas.height / 2;
+  buildGridCache(canvas.width, canvas.height);
 }
 
 // ============ CENTER DOT ============
@@ -171,36 +132,107 @@ const SEG_DIST_MIN = 10;
 const SEG_DIST_MAX = 28;
 let currentSegDist = SEG_DIST_MIN;
 let smoothFlip = 1;
-let snake = [];
+
+// Flat arrays for better cache performance
+const snakeX = new Float64Array(SNAKE_LEN);
+const snakeY = new Float64Array(SNAKE_LEN);
+let snakeVX = 0, snakeVY = 0;
+
+// Pre-compute segment radii (never changes)
+const segRadii = new Float64Array(SNAKE_LEN);
+for (let i = 0; i < SNAKE_LEN; i++) {
+  segRadii[i] = HEAD_R + (TAIL_R - HEAD_R) * (i / (SNAKE_LEN - 1));
+}
 
 const snakeImg = new Image();
 snakeImg.src = 'viimalie.png';
 let snakeImgReady = false;
-snakeImg.onload = () => { snakeImgReady = true; };
+
+// Pre-baked feathered slices — created once on image load
+let sliceCaches = null;
+
+snakeImg.onload = () => {
+  snakeImgReady = true;
+  bakeSlices();
+};
+
+function bakeSlices() {
+  const natW = snakeImg.naturalWidth;
+  const natH = snakeImg.naturalHeight;
+  const sliceW = natW / SNAKE_LEN;
+  const feather = 0.3;
+  const overlap = sliceW * feather;
+
+  sliceCaches = [];
+  for (let i = 0; i < SNAKE_LEN; i++) {
+    // Source crop with overlap
+    const sx = Math.max(0, i * sliceW - overlap);
+    const sxEnd = Math.min(natW, (i + 1) * sliceW + overlap);
+    const sw = sxEnd - sx;
+
+    // Render at a fixed resolution, scale at draw time
+    const pw = Math.ceil(sw);
+    const ph = Math.ceil(natH);
+
+    const c = document.createElement('canvas');
+    c.width = pw;
+    c.height = ph;
+    const sc = c.getContext('2d');
+
+    // Draw the slice at native resolution
+    sc.drawImage(snakeImg, sx, 0, sw, natH, 0, 0, pw, ph);
+
+    // Feather edges with destination-out
+    sc.globalCompositeOperation = 'destination-out';
+    const featherPx = pw * feather * 0.4;
+
+    // Left feather (skip for head)
+    if (i > 0) {
+      const lg = sc.createLinearGradient(0, 0, featherPx, 0);
+      lg.addColorStop(0, 'rgba(0,0,0,0.85)');
+      lg.addColorStop(1, 'rgba(0,0,0,0)');
+      sc.fillStyle = lg;
+      sc.fillRect(0, 0, featherPx, ph);
+    }
+
+    // Right feather (skip for tail)
+    if (i < SNAKE_LEN - 1) {
+      const rg = sc.createLinearGradient(pw - featherPx, 0, pw, 0);
+      rg.addColorStop(0, 'rgba(0,0,0,0)');
+      rg.addColorStop(1, 'rgba(0,0,0,0.85)');
+      sc.fillStyle = rg;
+      sc.fillRect(pw - featherPx, 0, featherPx, ph);
+    }
+
+    sc.globalCompositeOperation = 'source-over';
+
+    // Store the ratio of this slice's width vs. a normal slice (for scaling)
+    sliceCaches.push({ canvas: c, widthRatio: sw / sliceW });
+  }
+}
 
 function initSnake() {
-  snake = [];
   const cx = canvas.width / 2;
   const cy = canvas.height / 2;
-  for (let i = 0; i < SNAKE_LEN; i++) {
-    snake.push({ x: cx, y: cy, vx: 0, vy: 0 });
-  }
+  snakeX.fill(cx);
+  snakeY.fill(cy);
+  snakeVX = 0;
+  snakeVY = 0;
 }
 initSnake();
 
 function updateSnakeHead(dt) {
-  const head = snake[0];
-  const dx = mouse.x - head.x;
-  const dy = mouse.y - head.y;
+  const dx = mouse.x - snakeX[0];
+  const dy = mouse.y - snakeY[0];
   const dist = Math.sqrt(dx * dx + dy * dy);
 
   const stiffness = 35 + Math.min(dist, 200) * 0.15;
   const damping = 12;
 
-  head.vx += (dx * stiffness - head.vx * damping) * dt;
-  head.vy += (dy * stiffness - head.vy * damping) * dt;
-  head.x += head.vx * dt;
-  head.y += head.vy * dt;
+  snakeVX += (dx * stiffness - snakeVX * damping) * dt;
+  snakeVY += (dy * stiffness - snakeVY * damping) * dt;
+  snakeX[0] += snakeVX * dt;
+  snakeY[0] += snakeVY * dt;
 }
 
 function updateMouseSpeed(dt) {
@@ -216,142 +248,96 @@ function updateMouseSpeed(dt) {
   const targetDist = SEG_DIST_MIN + (SEG_DIST_MAX - SEG_DIST_MIN) * speedNorm;
   currentSegDist += (targetDist - currentSegDist) * Math.min(1, dt * 6);
 
-  const headAngle = Math.atan2(snake[0].y - snake[1].y, snake[0].x - snake[1].x);
-  const targetFlip = Math.cos(headAngle) > 0 ? -1 : 1;
+  const hAngle = Math.atan2(snakeY[0] - snakeY[1], snakeX[0] - snakeX[1]);
+  const targetFlip = Math.cos(hAngle) > 0 ? -1 : 1;
   smoothFlip += (targetFlip - smoothFlip) * Math.min(1, dt * 8);
 }
 
 function updateSnakeBody(dt) {
-  for (let i = 1; i < snake.length; i++) {
-    const prev = snake[i - 1];
-    const seg = snake[i];
-    const dx = seg.x - prev.x;
-    const dy = seg.y - prev.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
+  const maxDistSq = (currentSegDist * 1.5) * (currentSegDist * 1.5);
+  const segDistSq = currentSegDist * currentSegDist;
 
-    if (dist > currentSegDist) {
-      // Target position: exactly currentSegDist behind prev
+  for (let i = 1; i < SNAKE_LEN; i++) {
+    const dx = snakeX[i] - snakeX[i - 1];
+    const dy = snakeY[i] - snakeY[i - 1];
+    const distSq = dx * dx + dy * dy;
+
+    if (distSq > segDistSq) {
+      const dist = Math.sqrt(distSq);
       const t = currentSegDist / dist;
-      const targetX = prev.x + dx * t;
-      const targetY = prev.y + dy * t;
+      const targetX = snakeX[i - 1] + dx * t;
+      const targetY = snakeY[i - 1] + dy * t;
 
-      // Smooth lerp toward target — segments closer to head respond faster
-      const responsiveness = 1 - (i / snake.length) * 0.4; // head-near = 1.0, tail = 0.6
+      const responsiveness = 1 - (i / SNAKE_LEN) * 0.4;
       const lerpFactor = Math.min(1, dt * 30 * responsiveness);
-      seg.x += (targetX - seg.x) * lerpFactor;
-      seg.y += (targetY - seg.y) * lerpFactor;
+      snakeX[i] += (targetX - snakeX[i]) * lerpFactor;
+      snakeY[i] += (targetY - snakeY[i]) * lerpFactor;
     }
 
-    // Hard constraint: never let segments drift too far (prevents stretching)
-    const dx2 = seg.x - prev.x;
-    const dy2 = seg.y - prev.y;
-    const dist2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
-    const maxDist = currentSegDist * 1.5;
-    if (dist2 > maxDist) {
-      const t2 = maxDist / dist2;
-      seg.x = prev.x + dx2 * t2;
-      seg.y = prev.y + dy2 * t2;
+    // Hard clamp
+    const dx2 = snakeX[i] - snakeX[i - 1];
+    const dy2 = snakeY[i] - snakeY[i - 1];
+    const distSq2 = dx2 * dx2 + dy2 * dy2;
+    if (distSq2 > maxDistSq) {
+      const dist2 = Math.sqrt(distSq2);
+      const t2 = currentSegDist * 1.5 / dist2;
+      snakeX[i] = snakeX[i - 1] + dx2 * t2;
+      snakeY[i] = snakeY[i - 1] + dy2 * t2;
     }
   }
 }
-
-function segRadius(i) {
-  const t = i / (SNAKE_LEN - 1);
-  return HEAD_R + (TAIL_R - HEAD_R) * t;
-}
-
-// Offscreen canvas for feathered slice rendering
-const sliceCanvas = document.createElement('canvas');
-const sliceCtx = sliceCanvas.getContext('2d');
 
 function drawSnake() {
-  if (!snakeImgReady) return;
+  if (!sliceCaches) return;
 
-  const natW = snakeImg.naturalWidth;
-  const natH = snakeImg.naturalHeight;
-  const sliceW = natW / SNAKE_LEN;
-  const feather = 0.25; // fraction of slice width to feather on each edge
+  const baseDw = currentSegDist * 1.4;
+  const cosFlip = smoothFlip; // y-scale factor
 
-  for (let i = snake.length - 1; i >= 0; i--) {
-    const seg = snake[i];
+  for (let i = SNAKE_LEN - 1; i >= 0; i--) {
     const t = i / (SNAKE_LEN - 1);
-
-    let angle;
-    if (i === 0) {
-      angle = Math.atan2(snake[0].y - snake[1].y, snake[0].x - snake[1].x);
-    } else {
-      angle = Math.atan2(snake[i - 1].y - snake[i].y, snake[i - 1].x - snake[i].x);
-    }
-
-    // Wider source crop with overlap for blending
-    const overlap = sliceW * feather;
-    const sx = Math.max(0, i * sliceW - overlap);
-    const sw = Math.min(natW - sx, sliceW + overlap * 2);
-
-    const dh = segRadius(i) * 3;
-    const baseDw = currentSegDist * 1.4;
-    // Scale destination width proportionally to the wider source crop
-    const dw = baseDw * (sw / sliceW);
     const alpha = 1 - t * 0.25;
 
-    // Render slice with feathered alpha mask onto offscreen canvas
-    const pw = Math.ceil(dw + 4);
-    const ph = Math.ceil(dh + 4);
-    sliceCanvas.width = pw;
-    sliceCanvas.height = ph;
-
-    // Draw the cropped image slice
-    sliceCtx.clearRect(0, 0, pw, ph);
-    sliceCtx.drawImage(snakeImg, sx, 0, sw, natH, 0, 0, pw, ph);
-
-    // Apply feathered edges using destination-out gradient
-    sliceCtx.globalCompositeOperation = 'destination-out';
-
-    // Left feather (not on head segment)
-    if (i > 0) {
-      const featherPx = pw * feather * 0.5;
-      const leftGrad = sliceCtx.createLinearGradient(0, 0, featherPx, 0);
-      leftGrad.addColorStop(0, 'rgba(0,0,0,0.8)');
-      leftGrad.addColorStop(1, 'rgba(0,0,0,0)');
-      sliceCtx.fillStyle = leftGrad;
-      sliceCtx.fillRect(0, 0, featherPx, ph);
+    // Segment angle
+    let ax, ay;
+    if (i === 0) {
+      ax = snakeX[0] - snakeX[1];
+      ay = snakeY[0] - snakeY[1];
+    } else {
+      ax = snakeX[i - 1] - snakeX[i];
+      ay = snakeY[i - 1] - snakeY[i];
     }
+    const angle = Math.atan2(ay, ax) - Math.PI;
 
-    // Right feather (not on tail segment)
-    if (i < snake.length - 1) {
-      const featherPx = pw * feather * 0.5;
-      const rightGrad = sliceCtx.createLinearGradient(pw - featherPx, 0, pw, 0);
-      rightGrad.addColorStop(0, 'rgba(0,0,0,0)');
-      rightGrad.addColorStop(1, 'rgba(0,0,0,0.8)');
-      sliceCtx.fillStyle = rightGrad;
-      sliceCtx.fillRect(pw - featherPx, 0, featherPx, ph);
-    }
+    const dh = segRadii[i] * 3;
+    const dw = baseDw * sliceCaches[i].widthRatio;
+    const hw = dw / 2;
+    const hh = dh / 2;
 
-    sliceCtx.globalCompositeOperation = 'source-over';
-
-    // Draw feathered slice to main canvas
-    ctx.save();
+    // Build transform manually (avoid save/restore overhead)
+    const cosA = Math.cos(angle);
+    const sinA = Math.sin(angle);
+    // Combined rotate + scale(1, smoothFlip)
+    ctx.setTransform(cosA, sinA, -sinA * cosFlip, cosA * cosFlip, snakeX[i], snakeY[i]);
     ctx.globalAlpha = alpha;
-    ctx.translate(seg.x, seg.y);
-    ctx.rotate(angle - Math.PI);
-    ctx.scale(1, smoothFlip);
-    ctx.drawImage(sliceCanvas, -pw / 2, -ph / 2, pw, ph);
-    ctx.restore();
+    ctx.drawImage(sliceCaches[i].canvas, -hw, -hh, dw, dh);
   }
+
+  // Reset transform
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1;
 }
 
-// ============ CENTER DOT DRAWING ============
+// ============ CENTER DOT ============
 let dotPulse = 0;
 
 function drawCenterDot() {
   dotPulse += 0.03;
-  const { x, y } = centerDot;
+  const x = centerDot.x;
+  const y = centerDot.y;
   const baseR = 10;
   const pulseR = baseR + Math.sin(dotPulse) * 2;
 
-  // Outer glow
   if (state === State.IDLE) {
-    ctx.save();
     ctx.beginPath();
     ctx.arc(x, y, pulseR + 12, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(232,93,58,0.08)';
@@ -360,28 +346,16 @@ function drawCenterDot() {
     ctx.arc(x, y, pulseR + 6, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(232,93,58,0.12)';
     ctx.fill();
-    ctx.restore();
   }
 
-  // Main dot
   ctx.beginPath();
   ctx.arc(x, y, pulseR, 0, Math.PI * 2);
-
-  if (state === State.DRAWING) {
-    ctx.fillStyle = '#e85d3a';
-  } else if (state === State.SCORING) {
-    ctx.fillStyle = scoreColor;
-  } else {
-    ctx.fillStyle = '#fff';
-  }
+  ctx.fillStyle = state === State.DRAWING ? '#e85d3a' : state === State.SCORING ? scoreColor : '#fff';
   ctx.fill();
-
-  // Border
   ctx.strokeStyle = state === State.IDLE ? 'rgba(58,46,34,0.25)' : 'rgba(58,46,34,0.4)';
   ctx.lineWidth = 2;
   ctx.stroke();
 
-  // Inner highlight
   ctx.beginPath();
   ctx.arc(x - 2, y - 2, pulseR * 0.35, 0, Math.PI * 2);
   ctx.fillStyle = 'rgba(255,255,255,0.5)';
@@ -395,23 +369,25 @@ let scoreResult = null;
 let scoreShowTime = 0;
 let scoreColor = '#e85d3a';
 const SCORE_DISPLAY_MS = 2800;
-const MIN_POINT_DIST = 4;
+const MIN_POINT_DIST_SQ = 16; // 4^2, skip sqrt
 
 function recordPoint(x, y) {
   if (pathPoints.length > 0) {
     const last = pathPoints[pathPoints.length - 1];
-    const d = Math.sqrt((x - last.x) ** 2 + (y - last.y) ** 2);
-    if (d < MIN_POINT_DIST) return;
+    const dx = x - last.x;
+    const dy = y - last.y;
+    if (dx * dx + dy * dy < MIN_POINT_DIST_SQ) return;
   }
   pathPoints.push({ x, y });
 }
 
 function drawCurrentPath() {
-  if (pathPoints.length < 2) return;
+  const len = pathPoints.length;
+  if (len < 2) return;
 
   ctx.beginPath();
   ctx.moveTo(pathPoints[0].x, pathPoints[0].y);
-  for (let i = 1; i < pathPoints.length; i++) {
+  for (let i = 1; i < len; i++) {
     ctx.lineTo(pathPoints[i].x, pathPoints[i].y);
   }
   ctx.strokeStyle = '#f4a43a';
@@ -426,87 +402,89 @@ function drawCurrentPath() {
   ctx.fillStyle = 'rgba(244,164,58,0.6)';
   ctx.fill();
 
-  // Live distance indicator — thin line from path to center
-  if (pathPoints.length > 0) {
-    const last = pathPoints[pathPoints.length - 1];
-    ctx.save();
-    ctx.globalAlpha = 0.15;
-    ctx.setLineDash([4, 4]);
-    ctx.beginPath();
-    ctx.moveTo(last.x, last.y);
-    ctx.lineTo(centerDot.x, centerDot.y);
-    ctx.strokeStyle = '#3a2e22';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.restore();
-  }
+  // Line to center
+  const last = pathPoints[len - 1];
+  ctx.globalAlpha = 0.15;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.moveTo(last.x, last.y);
+  ctx.lineTo(centerDot.x, centerDot.y);
+  ctx.strokeStyle = '#3a2e22';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.globalAlpha = 1;
 }
 
 // ============ SCORING ============
-// Score based on how well the path forms a circle around the CENTER DOT
 function scoreCircle(points) {
-  if (points.length < 8) return { total: 0 };
+  const n = points.length;
+  if (n < 8) return { total: 0 };
 
   const cx = centerDot.x;
   const cy = centerDot.y;
-  const n = points.length;
 
-  // Calculate distances from each point to center
-  const dists = points.map(p => Math.sqrt((p.x - cx) ** 2 + (p.y - cy) ** 2));
-  const avgR = dists.reduce((a, b) => a + b, 0) / n;
+  // Single pass: compute distances + sum for average
+  let distSum = 0;
+  const dists = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const dx = points[i].x - cx;
+    const dy = points[i].y - cy;
+    const d = Math.sqrt(dx * dx + dy * dy);
+    dists[i] = d;
+    distSum += d;
+  }
+  const avgR = distSum / n;
+  if (avgR < 20) return { total: 0 };
 
-  if (avgR < 20) return { total: 0 }; // too small
-
-  // 1. Radial consistency (50%) — how constant is the distance to center?
+  // 1. Radial consistency (50%)
   let radialSqSum = 0;
-  for (const d of dists) {
-    const dev = (d - avgR) / avgR;
+  for (let i = 0; i < n; i++) {
+    const dev = (dists[i] - avgR) / avgR;
     radialSqSum += dev * dev;
   }
-  const rmsRadial = Math.sqrt(radialSqSum / n);
-  const radial = Math.max(0, Math.min(1, 1 - rmsRadial / 0.25));
+  const radial = Math.max(0, Math.min(1, 1 - Math.sqrt(radialSqSum / n) / 0.25));
 
-  // 2. Closure (15%) — gap between start and end
-  const first = points[0];
-  const last = points[n - 1];
-  const gap = Math.sqrt((first.x - last.x) ** 2 + (first.y - last.y) ** 2);
+  // 2. Closure (15%)
+  const gx = points[0].x - points[n - 1].x;
+  const gy = points[0].y - points[n - 1].y;
+  const gap = Math.sqrt(gx * gx + gy * gy);
   const closure = Math.max(0, Math.min(1, 1 - gap / (avgR * 1.2)));
 
-  // 3. Angular coverage (25%) — how much of 360deg was swept around center
-  const angles = points.map(p => Math.atan2(p.y - cy, p.x - cx));
+  // 3. Angular coverage (25%) + 4. Uniformity (10%) — single pass
   const NUM_SECTORS = 24;
   const sectorSize = (Math.PI * 2) / NUM_SECTORS;
-  const sectors = new Set();
-  for (const a of angles) {
-    const normalized = ((a % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
-    sectors.add(Math.floor(normalized / sectorSize));
-  }
-  const rawCoverage = sectors.size / NUM_SECTORS;
-  const coverage = Math.min(1, rawCoverage / 0.85);
+  const sectorCounts = new Uint16Array(NUM_SECTORS);
+  let filledCount = 0;
 
-  // 4. Uniformity (10%) — even spacing around circle
-  const sectorCounts = new Array(NUM_SECTORS).fill(0);
-  for (const a of angles) {
-    const normalized = ((a % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
-    sectorCounts[Math.floor(normalized / sectorSize)]++;
+  for (let i = 0; i < n; i++) {
+    const a = Math.atan2(points[i].y - cy, points[i].x - cx);
+    const norm = ((a % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+    const idx = Math.min(NUM_SECTORS - 1, (norm / sectorSize) | 0);
+    if (sectorCounts[idx] === 0) filledCount++;
+    sectorCounts[idx]++;
   }
-  const filledSectors = sectorCounts.filter(c => c > 0);
+
+  const coverage = Math.min(1, filledCount / (NUM_SECTORS * 0.85));
+
   let uniformity;
-  if (filledSectors.length <= 1) {
+  if (filledCount <= 1) {
     uniformity = 0;
   } else {
-    const avg = n / filledSectors.length;
+    const avg = n / filledCount;
     let variance = 0;
-    for (const c of filledSectors) {
-      variance += ((c - avg) / avg) ** 2;
+    for (let i = 0; i < NUM_SECTORS; i++) {
+      if (sectorCounts[i] > 0) {
+        const d = (sectorCounts[i] - avg) / avg;
+        variance += d * d;
+      }
     }
-    variance /= filledSectors.length;
-    uniformity = Math.max(0, 1 - Math.sqrt(variance) / 1.5);
+    uniformity = Math.max(0, 1 - Math.sqrt(variance / filledCount) / 1.5);
   }
 
-  const rawTotal = radial * 50 + closure * 15 + coverage * 25 + uniformity * 10;
-  const total = Math.min(100, Math.max(0, Math.round(rawTotal)));
+  const total = Math.min(100, Math.max(0, Math.round(
+    radial * 50 + closure * 15 + coverage * 25 + uniformity * 10
+  )));
 
   return { total, radial, closure, coverage, uniformity, avgR, cx, cy };
 }
@@ -524,21 +502,15 @@ function showScore(score) {
   state = State.SCORING;
   fittedCircle = { cx: centerDot.x, cy: centerDot.y, r: score.avgR };
 
-  // Color based on score
-  if (score.total >= 95) scoreColor = '#4caf50';
-  else if (score.total >= 80) scoreColor = '#8bc34a';
-  else if (score.total >= 60) scoreColor = '#f4a43a';
-  else if (score.total >= 40) scoreColor = '#e8953a';
-  else scoreColor = '#e53e3e';
+  scoreColor = score.total >= 95 ? '#4caf50' : score.total >= 80 ? '#8bc34a'
+    : score.total >= 60 ? '#f4a43a' : score.total >= 40 ? '#e8953a' : '#e53e3e';
 
-  // Update best
   if (score.total > bestScore) {
     bestScore = score.total;
     localStorage.setItem('circleDrawBest', String(bestScore));
     document.getElementById('bestVal').textContent = bestScore;
   }
 
-  // Position score display above center dot
   const el = document.getElementById('scoreDisplay');
   const valEl = document.getElementById('scoreValue');
   const labelEl = document.getElementById('scoreLabel');
@@ -546,11 +518,9 @@ function showScore(score) {
   el.style.left = centerDot.x + 'px';
   el.style.top = (centerDot.y - (fittedCircle.r || 100) - 60) + 'px';
   el.style.transform = 'translateX(-50%) translateY(0)';
-
   valEl.style.color = scoreColor;
   labelEl.style.color = scoreColor;
 
-  // Message
   const msgs = score.total >= 95 ? ['Perfect!', 'Incredible!', 'Flawless!']
     : score.total >= 85 ? ['Amazing!', 'So close!', 'Beautiful!']
     : score.total >= 70 ? ['Great!', 'Nice circle!', 'Well done!']
@@ -558,7 +528,6 @@ function showScore(score) {
     : ['Keep trying!', 'You can do it!', 'Try again!'];
   labelEl.textContent = msgs[Math.floor(Math.random() * msgs.length)];
 
-  // Animate number counting up
   scoreAnimValue = 0;
   scoreAnimTarget = score.total;
   valEl.textContent = '0';
@@ -571,54 +540,30 @@ function showScore(score) {
   };
   setTimeout(step, 200);
 
-  // Hide after delay
   if (scoreTimeout) clearTimeout(scoreTimeout);
   scoreTimeout = setTimeout(() => {
     el.classList.remove('show');
-    setTimeout(() => {
-      fittedCircle = null;
-      scoreResult = null;
-      state = State.IDLE;
-    }, 500);
+    setTimeout(() => { fittedCircle = null; scoreResult = null; state = State.IDLE; }, 500);
   }, SCORE_DISPLAY_MS);
 }
 
-// ============ DOT GRID BACKGROUND ============
-function drawDotGrid() {
-  const spacing = 32;
-  ctx.fillStyle = 'rgba(180,164,144,0.18)';
-  for (let x = 0; x < canvas.width; x += spacing) {
-    for (let y = 0; y < canvas.height; y += spacing) {
-      ctx.beginPath();
-      ctx.arc(x, y, 1.2, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-}
-
-// ============ DRAW FITTED CIRCLE OVERLAY ============
+// ============ FITTED OVERLAY ============
 function drawFittedOverlay() {
   if (!fittedCircle || !scoreResult) return;
 
-  const elapsed = Date.now() - scoreShowTime;
-  const fadeIn = Math.min(1, elapsed / 500);
+  const fadeIn = Math.min(1, (Date.now() - scoreShowTime) / 500);
   const { cx, cy, r } = fittedCircle;
 
-  // Perfect circle outline (what you should have drawn)
-  ctx.save();
   ctx.globalAlpha = fadeIn * 0.35;
+  ctx.setLineDash([8, 5]);
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.setLineDash([8, 5]);
   ctx.strokeStyle = scoreColor;
   ctx.lineWidth = 2;
   ctx.stroke();
   ctx.setLineDash([]);
-  ctx.restore();
 
-  // The user's drawn path
   if (pathPoints.length > 1) {
-    ctx.save();
     ctx.globalAlpha = fadeIn * 0.5;
     ctx.beginPath();
     ctx.moveTo(pathPoints[0].x, pathPoints[0].y);
@@ -630,19 +575,14 @@ function drawFittedOverlay() {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.stroke();
-    ctx.restore();
   }
+  ctx.globalAlpha = 1;
 }
 
-// ============ INPUT HANDLING ============
+// ============ INPUT ============
 function getPos(e) {
-  if (e.touches && e.touches.length > 0) {
-    return { x: e.touches[0].clientX, y: e.touches[0].clientY };
-  }
-  if (e.changedTouches && e.changedTouches.length > 0) {
-    return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
-  }
-  return { x: e.clientX, y: e.clientY };
+  const t = e.touches ? e.touches[0] : e.changedTouches ? e.changedTouches[0] : e;
+  return { x: t.clientX, y: t.clientY };
 }
 
 function onPointerMove(e) {
@@ -650,10 +590,7 @@ function onPointerMove(e) {
   const pos = getPos(e);
   mouse.x = pos.x;
   mouse.y = pos.y;
-
-  if (state === State.DRAWING) {
-    recordPoint(pos.x, pos.y);
-  }
+  if (state === State.DRAWING) recordPoint(pos.x, pos.y);
 }
 
 function onPointerDown(e) {
@@ -661,57 +598,36 @@ function onPointerDown(e) {
   const pos = getPos(e);
   mouse.x = pos.x;
   mouse.y = pos.y;
-
   if (state === State.IDLE) {
     state = State.DRAWING;
     pathPoints = [];
     recordPoint(pos.x, pos.y);
     document.getElementById('instructions').style.opacity = '0.2';
-    // Hide previous score if still showing
     document.getElementById('scoreDisplay').classList.remove('show');
   }
 }
 
 function onPointerUp(e) {
   e.preventDefault();
-  if (state === State.DRAWING) {
-    const pos = getPos(e);
-    mouse.x = pos.x;
-    mouse.y = pos.y;
+  if (state !== State.DRAWING) return;
+  const pos = getPos(e);
+  mouse.x = pos.x;
+  mouse.y = pos.y;
+  document.getElementById('instructions').style.opacity = '1';
 
-    document.getElementById('instructions').style.opacity = '1';
-
-    if (pathPoints.length < 8) {
-      pathPoints = [];
-      state = State.IDLE;
-      return;
-    }
-
-    const score = scoreCircle(pathPoints);
-    if (score.total === 0) {
-      pathPoints = [];
-      state = State.IDLE;
-      return;
-    }
-
-    showScore(score);
-  }
+  if (pathPoints.length < 8) { pathPoints = []; state = State.IDLE; return; }
+  const score = scoreCircle(pathPoints);
+  if (score.total === 0) { pathPoints = []; state = State.IDLE; return; }
+  showScore(score);
 }
 
-// Mouse
 canvas.addEventListener('mousemove', onPointerMove);
 canvas.addEventListener('mousedown', onPointerDown);
 canvas.addEventListener('mouseup', onPointerUp);
-
-// Touch
 canvas.addEventListener('touchmove', onPointerMove, { passive: false });
 canvas.addEventListener('touchstart', onPointerDown, { passive: false });
 canvas.addEventListener('touchend', onPointerUp, { passive: false });
-
-document.addEventListener('mousemove', (e) => {
-  mouse.x = e.clientX;
-  mouse.y = e.clientY;
-});
+document.addEventListener('mousemove', (e) => { mouse.x = e.clientX; mouse.y = e.clientY; });
 
 // ============ GAME LOOP ============
 let lastTime = performance.now();
@@ -720,30 +636,20 @@ function gameLoop(now) {
   const dt = Math.min((now - lastTime) / 1000, 0.05);
   lastTime = now;
 
-  // Clear
+  // Clear with bg color
   ctx.fillStyle = '#f0e6d8';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // Dot grid
-  drawDotGrid();
+  // Cached dot grid (single drawImage instead of hundreds of arc calls)
+  if (gridCanvas) ctx.drawImage(gridCanvas, 0, 0);
 
-  // Fitted circle overlay (during scoring)
   drawFittedOverlay();
-
-  // Current drawing path
-  if (state === State.DRAWING) {
-    drawCurrentPath();
-  }
-
-  // Center dot (draw before snake so snake goes over it)
+  if (state === State.DRAWING) drawCurrentPath();
   drawCenterDot();
 
-  // Update snake
   updateMouseSpeed(dt);
   updateSnakeHead(dt);
   updateSnakeBody(dt);
-
-  // Draw snake
   drawSnake();
 
   requestAnimationFrame(gameLoop);
