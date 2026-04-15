@@ -1,0 +1,713 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CSV Translation Merge</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #151923;
+    --panel-2: #1c2130;
+    --border: #2a3142;
+    --text: #e6e8ef;
+    --muted: #8a93a6;
+    --accent: #6aa9ff;
+    --add: #1f3a22;
+    --add-ink: #9ff0a6;
+    --del: #3a1f22;
+    --del-ink: #ff9aa0;
+    --warn: #3a331f;
+    --warn-ink: #ffd277;
+    --ok: #1f3a33;
+    --ok-ink: #8eead0;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { padding: 18px 24px; border-bottom: 1px solid var(--border); background: var(--panel); position: sticky; top: 0; z-index: 10; }
+  h1 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
+  .sub { color: var(--muted); font-size: 12px; }
+  main { padding: 20px 24px 80px; max-width: 1400px; margin: 0 auto; }
+  .upload-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  .drop {
+    border: 1.5px dashed var(--border);
+    border-radius: 10px;
+    padding: 18px;
+    background: var(--panel);
+    transition: border-color .15s, background .15s;
+    cursor: pointer;
+    display: block;
+  }
+  .drop.hover { border-color: var(--accent); background: var(--panel-2); }
+  .drop h3 { margin: 0 0 4px; font-size: 13px; font-weight: 600; }
+  .drop .hint { color: var(--muted); font-size: 12px; }
+  .drop input { display: none; }
+  .file-list { margin-top: 10px; display: flex; flex-direction: column; gap: 4px; }
+  .file-chip {
+    display: flex; align-items: center; justify-content: space-between;
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 10px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+  }
+  .file-chip .fn { color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-chip .meta { color: var(--muted); margin-left: 8px; white-space: nowrap; }
+  .file-chip .x {
+    background: transparent; border: none; color: var(--muted); cursor: pointer; padding: 0 4px;
+    font-size: 14px; line-height: 1; margin-left: 6px;
+  }
+  .file-chip .x:hover { color: var(--del-ink); }
+  .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 12px 0 16px; }
+  button {
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    padding: 8px 14px; border-radius: 6px; cursor: pointer; font: inherit;
+  }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.primary { background: var(--accent); color: #0b1220; border-color: var(--accent); font-weight: 600; }
+  .filter { display: inline-flex; gap: 4px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 3px; }
+  .filter button { border: none; padding: 6px 12px; font-size: 12px; background: transparent; }
+  .filter button.active { background: var(--panel-2); color: var(--accent); }
+  .stats { display: flex; gap: 16px; font-size: 12px; color: var(--muted); margin-left: auto; }
+  .stats b { color: var(--text); font-weight: 600; }
+
+  .pair-tabs {
+    display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px;
+    border-bottom: 1px solid var(--border); padding-bottom: 10px;
+  }
+  .pair-tab {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+    padding: 8px 12px; cursor: pointer; font-size: 12px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .pair-tab.active { border-color: var(--accent); background: var(--panel-2); }
+  .pair-tab .name { font-family: ui-monospace, monospace; color: var(--accent); }
+  .pair-tab .badge {
+    font-size: 10px; padding: 2px 6px; border-radius: 3px; font-weight: 600;
+    background: var(--panel-2); color: var(--muted);
+  }
+  .pair-tab.active .badge { background: var(--accent); color: #0b1220; }
+  .pair-tab.broken { opacity: .6; }
+  .pair-tab.broken .name { color: var(--del-ink); }
+
+  .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px; }
+  .stat-card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+  .stat-card .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .stat-card .v { font-size: 22px; font-weight: 600; margin-top: 2px; }
+  .rows { display: flex; flex-direction: column; gap: 6px; }
+  .row {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 10px 14px;
+    align-items: start;
+  }
+  .row .tag {
+    font-family: ui-monospace, monospace; font-size: 11px; font-weight: 600;
+    padding: 3px 8px; border-radius: 4px; white-space: nowrap; align-self: start;
+  }
+  .tag.ok     { background: var(--ok);   color: var(--ok-ink); }
+  .tag.warn   { background: var(--warn); color: var(--warn-ink); }
+  .tag.add    { background: var(--add);  color: var(--add-ink); }
+  .tag.del    { background: var(--del);  color: var(--del-ink); }
+  .row .field { font-family: ui-monospace, monospace; font-size: 12px; color: var(--accent); word-break: break-all; }
+  .row .default { font-size: 13px; color: var(--text); grid-column: 1 / -1; white-space: pre-wrap; word-break: break-word; }
+  .row.changed .default { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .row .side { background: var(--panel-2); border-radius: 6px; padding: 8px 10px; font-family: ui-monospace, monospace; font-size: 12px; line-height: 1.5; }
+  .row .side .lbl { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px; }
+  .side del { background: rgba(255, 154, 160, .22); color: var(--del-ink); text-decoration: none; padding: 0 2px; border-radius: 2px; }
+  .side ins { background: rgba(159, 240, 166, .2); color: var(--add-ink); text-decoration: none; padding: 0 2px; border-radius: 2px; }
+  .empty { text-align: center; color: var(--muted); padding: 40px 20px; border: 1px dashed var(--border); border-radius: 10px; }
+  .error { background: var(--del); color: var(--del-ink); padding: 10px 14px; border-radius: 6px; margin: 10px 0; font-size: 13px; }
+  .notice { background: var(--warn); color: var(--warn-ink); padding: 10px 14px; border-radius: 6px; margin: 10px 0; font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>CSV Translation Merge</h1>
+  <div class="sub">Batch-pair original + translated CSVs. Drop stale keys, preserve original defaults, overlay matching translations.</div>
+</header>
+<main>
+  <div class="upload-grid">
+    <label class="drop" id="dropA">
+      <h3>Originals (source of truth)</h3>
+      <div class="hint">Most up-to-date CSVs. Keys and Defaults here win. Drop multiple files.</div>
+      <div class="file-list" id="listA"></div>
+      <input type="file" accept=".csv,text/csv" id="fileA" multiple>
+    </label>
+    <label class="drop" id="dropB">
+      <h3>Translated (stale but has translations)</h3>
+      <div class="hint">Older CSVs from translators. Translations pulled from here. Drop multiple files.</div>
+      <div class="file-list" id="listB"></div>
+      <input type="file" accept=".csv,text/csv" id="fileB" multiple>
+    </label>
+  </div>
+
+  <div id="error" class="error" style="display:none"></div>
+  <div id="notice" class="notice" style="display:none"></div>
+
+  <div class="toolbar">
+    <button id="compareBtn" class="primary" disabled>Compare</button>
+    <div class="filter" id="filter" hidden>
+      <button data-f="all" class="active">All</button>
+      <button data-f="changed">Default changed</button>
+      <button data-f="added">Added</button>
+      <button data-f="removed">Removed</button>
+    </div>
+    <div class="stats" id="stats"></div>
+    <button id="exportBtn" disabled>Export all merged (ZIP)</button>
+  </div>
+
+  <div class="pair-tabs" id="pairTabs" hidden></div>
+  <div class="summary" id="summary" hidden></div>
+  <div class="rows" id="rows"></div>
+</main>
+
+<script>
+//========== CSV parser (RFC 4180-ish) ==========
+function parseCSV(text) {
+  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+  const rows = [];
+  let row = [], cur = '', inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQ) {
+      if (c === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else inQ = false; }
+      else cur += c;
+    } else {
+      if (c === '"') inQ = true;
+      else if (c === ',') { row.push(cur); cur = ''; }
+      else if (c === '\r') {
+        if (text[i + 1] === '\n') i++;
+        row.push(cur); cur = ''; rows.push(row); row = [];
+      } else if (c === '\n') {
+        row.push(cur); cur = ''; rows.push(row); row = [];
+      } else cur += c;
+    }
+  }
+  if (cur.length || row.length) { row.push(cur); rows.push(row); }
+  while (rows.length && rows[rows.length - 1].every(x => x === '')) rows.pop();
+  return rows;
+}
+function serializeCSV(rows) {
+  const esc = (v) => {
+    v = v == null ? '' : String(v);
+    if (/[",\r\n]/.test(v)) return '"' + v.replace(/"/g, '""') + '"';
+    return v;
+  };
+  return rows.map(r => r.map(esc).join(',')).join('\r\n') + '\r\n';
+}
+
+//========== Word-level diff (LCS) ==========
+function tokenize(s) { return s.match(/(\s+|[^\s]+)/g) || []; }
+function diffTokens(a, b) {
+  const n = a.length, m = b.length;
+  const dp = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+  for (let i = n - 1; i >= 0; i--)
+    for (let j = m - 1; j >= 0; j--)
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  const out = []; let i = 0, j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) { out.push(['=', a[i]]); i++; j++; }
+    else if (dp[i + 1][j] >= dp[i][j + 1]) { out.push(['-', a[i]]); i++; }
+    else { out.push(['+', b[j]]); j++; }
+  }
+  while (i < n) out.push(['-', a[i++]]);
+  while (j < m) out.push(['+', b[j++]]);
+  return out;
+}
+function escHTML(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function renderDiffSide(diff, side) {
+  let html = '';
+  for (const [op, tok] of diff) {
+    if (op === '=') html += escHTML(tok);
+    else if (op === '-' && side === 'a') html += '<del>' + escHTML(tok) + '</del>';
+    else if (op === '+' && side === 'b') html += '<ins>' + escHTML(tok) + '</ins>';
+  }
+  return html;
+}
+
+//========== Minimal ZIP writer (STORE, no compression) ==========
+// CRC32
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[i] = c >>> 0;
+  }
+  return t;
+})();
+function crc32(u8) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < u8.length; i++) c = CRC_TABLE[(c ^ u8[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+function buildZip(files /* [{name, data: Uint8Array}] */) {
+  const enc = new TextEncoder();
+  const chunks = [];
+  const central = [];
+  let offset = 0;
+  for (const f of files) {
+    const nameBytes = enc.encode(f.name);
+    const crc = crc32(f.data);
+    const size = f.data.length;
+    // Local file header (30 + name)
+    const local = new Uint8Array(30 + nameBytes.length);
+    const dv = new DataView(local.buffer);
+    dv.setUint32(0, 0x04034b50, true);
+    dv.setUint16(4, 20, true);           // version
+    dv.setUint16(6, 0x0800, true);       // general purpose, UTF-8 name
+    dv.setUint16(8, 0, true);            // method = store
+    dv.setUint16(10, 0, true);           // mod time
+    dv.setUint16(12, 0, true);           // mod date
+    dv.setUint32(14, crc, true);
+    dv.setUint32(18, size, true);
+    dv.setUint32(22, size, true);
+    dv.setUint16(26, nameBytes.length, true);
+    dv.setUint16(28, 0, true);
+    local.set(nameBytes, 30);
+    chunks.push(local);
+    chunks.push(f.data);
+
+    // Central dir entry (46 + name)
+    const cent = new Uint8Array(46 + nameBytes.length);
+    const cv = new DataView(cent.buffer);
+    cv.setUint32(0, 0x02014b50, true);
+    cv.setUint16(4, 20, true);            // version made by
+    cv.setUint16(6, 20, true);            // version needed
+    cv.setUint16(8, 0x0800, true);
+    cv.setUint16(10, 0, true);
+    cv.setUint16(12, 0, true);
+    cv.setUint16(14, 0, true);
+    cv.setUint32(16, crc, true);
+    cv.setUint32(20, size, true);
+    cv.setUint32(24, size, true);
+    cv.setUint16(28, nameBytes.length, true);
+    cv.setUint16(30, 0, true);
+    cv.setUint16(32, 0, true);
+    cv.setUint16(34, 0, true);
+    cv.setUint16(36, 0, true);
+    cv.setUint32(38, 0, true);
+    cv.setUint32(42, offset, true);
+    cent.set(nameBytes, 46);
+    central.push(cent);
+
+    offset += local.length + f.data.length;
+  }
+  const centralStart = offset;
+  let centralSize = 0;
+  for (const c of central) centralSize += c.length;
+
+  const end = new Uint8Array(22);
+  const ev = new DataView(end.buffer);
+  ev.setUint32(0, 0x06054b50, true);
+  ev.setUint16(4, 0, true);
+  ev.setUint16(6, 0, true);
+  ev.setUint16(8, files.length, true);
+  ev.setUint16(10, files.length, true);
+  ev.setUint32(12, centralSize, true);
+  ev.setUint32(16, centralStart, true);
+  ev.setUint16(20, 0, true);
+
+  // concat
+  let total = centralStart + centralSize + end.length;
+  const out = new Uint8Array(total);
+  let p = 0;
+  for (const c of chunks) { out.set(c, p); p += c.length; }
+  for (const c of central) { out.set(c, p); p += c.length; }
+  out.set(end, p);
+  return out;
+}
+
+//========== Pair name normalization ==========
+function normalizeName(name) {
+  let s = name.toLowerCase();
+  s = s.replace(/\.csv$/i, '');
+  // strip common translator markers
+  s = s.replace(/^translated\s*[-_]\s*/i, '');
+  s = s.replace(/\s*[-_]\s*translated$/i, '');
+  s = s.replace(/^translation\s*[-_]\s*/i, '');
+  s = s.replace(/\s*[-_]\s*translation$/i, '');
+  s = s.trim().replace(/\s+/g, ' ');
+  return s;
+}
+
+//========== State ==========
+const state = {
+  filesA: new Map(), // name -> { name, rows, normKey }
+  filesB: new Map(),
+  pairs: [],         // [{ key, nameA, nameB, rowsA, rowsB, diffRows, merged, error }]
+  activePair: 0,
+  filter: 'all',
+  compared: false,
+};
+
+//========== File upload wiring ==========
+function wireDrop(dropId, inputId, listId, sideKey) {
+  const drop = document.getElementById(dropId);
+  const input = document.getElementById(inputId);
+  const listEl = document.getElementById(listId);
+
+  const handle = (fileList) => {
+    const files = Array.from(fileList || []);
+    let pending = files.length;
+    if (!pending) return;
+    files.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const rows = parseCSV(reader.result);
+          const bucket = sideKey === 'A' ? state.filesA : state.filesB;
+          bucket.set(file.name, {
+            name: file.name,
+            rows,
+            normKey: normalizeName(file.name),
+          });
+          state.compared = false;
+        } catch (e) {
+          showError('Parse error in ' + file.name + ': ' + e.message);
+        }
+        if (--pending === 0) { renderFileList(sideKey); updateCompareButton(); }
+      };
+      reader.readAsText(file);
+    });
+  };
+
+  input.addEventListener('change', e => { handle(e.target.files); input.value = ''; });
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('hover'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('hover'));
+  drop.addEventListener('drop', e => {
+    e.preventDefault(); drop.classList.remove('hover');
+    handle(e.dataTransfer.files);
+  });
+}
+wireDrop('dropA', 'fileA', 'listA', 'A');
+wireDrop('dropB', 'fileB', 'listB', 'B');
+
+function renderFileList(side) {
+  const bucket = side === 'A' ? state.filesA : state.filesB;
+  const listEl = document.getElementById(side === 'A' ? 'listA' : 'listB');
+  if (!bucket.size) { listEl.innerHTML = ''; return; }
+  const items = [];
+  for (const f of bucket.values()) {
+    const rowCount = Math.max(0, f.rows.length - 1);
+    items.push(
+      `<div class="file-chip">
+         <span class="fn" title="${escHTML(f.name)}">${escHTML(f.name)}</span>
+         <span class="meta">${rowCount} rows</span>
+         <button class="x" data-side="${side}" data-name="${escHTML(f.name)}" title="Remove">&times;</button>
+       </div>`
+    );
+  }
+  listEl.innerHTML = items.join('');
+  listEl.querySelectorAll('button.x').forEach(b => {
+    b.addEventListener('click', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      const side = b.dataset.side;
+      const name = b.dataset.name;
+      (side === 'A' ? state.filesA : state.filesB).delete(name);
+      state.compared = false;
+      renderFileList(side);
+      updateCompareButton();
+      clearResults();
+    });
+  });
+}
+
+function showError(msg) {
+  const el = document.getElementById('error');
+  if (!msg) { el.style.display = 'none'; el.textContent = ''; }
+  else { el.style.display = 'block'; el.textContent = msg; }
+}
+function showNotice(msg) {
+  const el = document.getElementById('notice');
+  if (!msg) { el.style.display = 'none'; el.textContent = ''; }
+  else { el.style.display = 'block'; el.textContent = msg; }
+}
+function updateCompareButton() {
+  document.getElementById('compareBtn').disabled = !(state.filesA.size && state.filesB.size);
+}
+function clearResults() {
+  state.pairs = [];
+  state.activePair = 0;
+  document.getElementById('pairTabs').hidden = true;
+  document.getElementById('pairTabs').innerHTML = '';
+  document.getElementById('summary').hidden = true;
+  document.getElementById('summary').innerHTML = '';
+  document.getElementById('rows').innerHTML = '';
+  document.getElementById('exportBtn').disabled = true;
+  document.getElementById('filter').hidden = true;
+  document.getElementById('stats').innerHTML = '';
+}
+
+//========== Compare + merge ==========
+function compareOnePair(rowsA, rowsB) {
+  if (!rowsA.length || !rowsB.length) throw new Error('Empty CSV');
+  const headerA = rowsA[0], headerB = rowsB[0];
+  if (headerA.length < 2 || headerA[0].trim().toLowerCase() !== 'field' || headerA[1].trim().toLowerCase() !== 'default')
+    throw new Error('Original must start with Field, Default');
+  if (headerB.length < 2 || headerB[0].trim().toLowerCase() !== 'field' || headerB[1].trim().toLowerCase() !== 'default')
+    throw new Error('Translated must start with Field, Default');
+
+  const mapB = new Map();
+  for (let i = 1; i < rowsB.length; i++) if (rowsB[i][0]) mapB.set(rowsB[i][0], rowsB[i]);
+  const setA = new Set();
+  for (let i = 1; i < rowsA.length; i++) if (rowsA[i][0]) setA.add(rowsA[i][0]);
+
+  const outHeader = headerA.slice();
+  const numCols = outHeader.length;
+  const translationCols = [];
+  for (let c = 2; c < numCols; c++) translationCols.push(c);
+
+  const headerBIdx = new Map();
+  headerB.forEach((h, idx) => headerBIdx.set(h.trim().toLowerCase(), idx));
+
+  const diffRows = [];
+  const mergedRows = [outHeader];
+
+  for (let i = 1; i < rowsA.length; i++) {
+    const aRow = rowsA[i];
+    const field = aRow[0];
+    if (!field) continue;
+    const padded = aRow.slice();
+    while (padded.length < numCols) padded.push('');
+
+    const bRow = mapB.get(field);
+    if (!bRow) {
+      diffRows.push({ status: 'added', field, defaultA: padded[1], defaultB: null });
+      mergedRows.push(padded);
+      continue;
+    }
+    const defaultA = padded[1] || '';
+    const defaultB = bRow[1] || '';
+    if (defaultA === defaultB) {
+      const outRow = padded.slice();
+      for (const c of translationCols) {
+        const hname = headerA[c].trim().toLowerCase();
+        const bIdx = headerBIdx.get(hname);
+        if (bIdx != null && bIdx >= 0) outRow[c] = bRow[bIdx] != null ? bRow[bIdx] : '';
+      }
+      diffRows.push({ status: 'unchanged', field, defaultA, defaultB });
+      mergedRows.push(outRow);
+    } else {
+      diffRows.push({ status: 'changed', field, defaultA, defaultB });
+      mergedRows.push(padded);
+    }
+  }
+  for (let i = 1; i < rowsB.length; i++) {
+    const field = rowsB[i][0];
+    if (!field) continue;
+    if (!setA.has(field))
+      diffRows.push({ status: 'removed', field, defaultA: null, defaultB: rowsB[i][1] || '' });
+  }
+  return { diffRows, merged: mergedRows };
+}
+
+function compareAll() {
+  showError(''); showNotice('');
+  // build pairs by normKey
+  const bByKey = new Map();
+  for (const f of state.filesB.values()) {
+    if (!bByKey.has(f.normKey)) bByKey.set(f.normKey, []);
+    bByKey.get(f.normKey).push(f);
+  }
+  const aByKey = new Map();
+  for (const f of state.filesA.values()) {
+    if (!aByKey.has(f.normKey)) aByKey.set(f.normKey, []);
+    aByKey.get(f.normKey).push(f);
+  }
+
+  const pairs = [];
+  const unpairedA = [], unpairedB = [];
+  const ambiguous = [];
+  const consumedB = new Set();
+  for (const [key, aFiles] of aByKey) {
+    const bFiles = bByKey.get(key) || [];
+    if (aFiles.length > 1 || bFiles.length > 1) {
+      ambiguous.push(key);
+    }
+    if (!bFiles.length) { unpairedA.push(...aFiles.map(f => f.name)); continue; }
+    // zip pairwise as many as possible
+    const n = Math.min(aFiles.length, bFiles.length);
+    for (let i = 0; i < n; i++) {
+      const a = aFiles[i], b = bFiles[i];
+      consumedB.add(b.name);
+      try {
+        const res = compareOnePair(a.rows, b.rows);
+        pairs.push({ key, nameA: a.name, nameB: b.name, rowsA: a.rows, rowsB: b.rows, ...res });
+      } catch (e) {
+        pairs.push({ key, nameA: a.name, nameB: b.name, rowsA: a.rows, rowsB: b.rows, error: e.message });
+      }
+    }
+    if (aFiles.length > bFiles.length) unpairedA.push(...aFiles.slice(bFiles.length).map(f => f.name));
+  }
+  for (const f of state.filesB.values()) if (!consumedB.has(f.name)) unpairedB.push(f.name);
+
+  if (!pairs.length) {
+    showError('No files could be paired. Make sure original and translated share a base filename (translator prefixes like "Translated - " are stripped automatically).');
+    clearResults();
+    return;
+  }
+
+  state.pairs = pairs;
+  state.activePair = 0;
+  state.compared = true;
+
+  const notes = [];
+  if (unpairedA.length) notes.push('Unmatched originals: ' + unpairedA.join(', '));
+  if (unpairedB.length) notes.push('Unmatched translated (will be ignored): ' + unpairedB.join(', '));
+  if (ambiguous.length) notes.push('Ambiguous matches for: ' + ambiguous.join(', '));
+  showNotice(notes.join(' · '));
+
+  renderPairTabs();
+  renderCurrentPair();
+  document.getElementById('exportBtn').disabled = false;
+  document.getElementById('filter').hidden = false;
+}
+
+function renderPairTabs() {
+  const el = document.getElementById('pairTabs');
+  if (state.pairs.length <= 1) { el.hidden = true; el.innerHTML = ''; return; }
+  el.hidden = false;
+  const buttons = state.pairs.map((p, i) => {
+    const total = p.diffRows ? p.diffRows.length : 0;
+    const changed = p.diffRows ? p.diffRows.filter(d => d.status !== 'unchanged').length : 0;
+    const broken = !!p.error;
+    const badge = broken ? 'ERROR' : `${changed} / ${total}`;
+    return `<div class="pair-tab ${i === state.activePair ? 'active' : ''} ${broken ? 'broken' : ''}" data-i="${i}">
+              <span class="name" title="${escHTML(p.nameA)} ↔ ${escHTML(p.nameB)}">${escHTML(p.nameA)}</span>
+              <span class="badge">${badge}</span>
+            </div>`;
+  });
+  el.innerHTML = buttons.join('');
+  el.querySelectorAll('.pair-tab').forEach(t => {
+    t.addEventListener('click', () => {
+      state.activePair = parseInt(t.dataset.i, 10);
+      renderPairTabs();
+      renderCurrentPair();
+    });
+  });
+}
+
+function renderCurrentPair() {
+  const p = state.pairs[state.activePair];
+  const rowsEl = document.getElementById('rows');
+  const summaryEl = document.getElementById('summary');
+  const statsEl = document.getElementById('stats');
+  if (!p) { clearResults(); return; }
+  if (p.error) {
+    summaryEl.hidden = true; summaryEl.innerHTML = '';
+    statsEl.innerHTML = '';
+    rowsEl.innerHTML = `<div class="error">${escHTML(p.nameA)} ↔ ${escHTML(p.nameB)}: ${escHTML(p.error)}</div>`;
+    return;
+  }
+  const counts = { unchanged: 0, changed: 0, added: 0, removed: 0 };
+  for (const d of p.diffRows) counts[d.status]++;
+  summaryEl.hidden = false;
+  summaryEl.innerHTML =
+    card('Unchanged', counts.unchanged) +
+    card('Default changed', counts.changed) +
+    card('Added (original-only)', counts.added) +
+    card('Removed (stale)', counts.removed);
+  statsEl.innerHTML = `<span><b>${p.nameA}</b> ↔ <b>${p.nameB}</b></span>
+                       <span><b>${p.diffRows.length}</b> total</span>`;
+  renderRows(p);
+}
+function card(k, v) {
+  return `<div class="stat-card"><div class="k">${k}</div><div class="v">${v}</div></div>`;
+}
+function renderRows(p) {
+  const container = document.getElementById('rows');
+  const f = state.filter;
+  const visible = p.diffRows.filter(d => {
+    if (d.status === 'unchanged') return false;
+    return f === 'all' ? true : d.status === f;
+  });
+  if (!visible.length) { container.innerHTML = '<div class="empty">No rows match this filter.</div>'; return; }
+  const out = [];
+  for (const d of visible) {
+    let tag, tagCls, defaultBlock;
+    if (d.status === 'changed') {
+      tag = 'DEFAULT CHANGED'; tagCls = 'warn';
+      const a = tokenize(d.defaultB), b = tokenize(d.defaultA);
+      const diff = diffTokens(a, b);
+      defaultBlock =
+        `<div class="default">
+           <div class="side"><div class="lbl">Translated (old)</div>${renderDiffSide(diff, 'a')}</div>
+           <div class="side"><div class="lbl">Original (new, kept)</div>${renderDiffSide(diff, 'b')}</div>
+         </div>`;
+    } else if (d.status === 'added') {
+      tag = 'ADDED'; tagCls = 'add';
+      defaultBlock = `<div class="default">${escHTML(d.defaultA)}</div>`;
+    } else { // removed
+      tag = 'REMOVED (stale)'; tagCls = 'del';
+      defaultBlock = `<div class="default">${escHTML(d.defaultB)}</div>`;
+    }
+    out.push(`<div class="row ${d.status}">
+        <span class="tag ${tagCls}">${tag}</span>
+        <span class="field">${escHTML(d.field)}</span>
+        ${defaultBlock}
+      </div>`);
+  }
+  container.innerHTML = out.join('');
+}
+
+//========== Buttons ==========
+document.getElementById('compareBtn').addEventListener('click', compareAll);
+document.getElementById('filter').addEventListener('click', e => {
+  const b = e.target.closest('button[data-f]');
+  if (!b) return;
+  state.filter = b.dataset.f;
+  document.querySelectorAll('#filter button').forEach(x => x.classList.toggle('active', x === b));
+  const p = state.pairs[state.activePair];
+  if (p && !p.error) renderRows(p);
+});
+document.getElementById('exportBtn').addEventListener('click', () => {
+  const good = state.pairs.filter(p => !p.error && p.merged);
+  if (!good.length) return;
+  if (good.length === 1) {
+    const p = good[0];
+    downloadCSV(p.merged, mergedName(p.nameA));
+    return;
+  }
+  const enc = new TextEncoder();
+  const files = good.map(p => ({
+    name: mergedName(p.nameA),
+    data: enc.encode(serializeCSV(p.merged)),
+  }));
+  // avoid dup filenames
+  const seen = new Map();
+  for (const f of files) {
+    if (seen.has(f.name)) {
+      const n = seen.get(f.name) + 1;
+      seen.set(f.name, n);
+      const dot = f.name.lastIndexOf('.');
+      f.name = dot > 0 ? f.name.slice(0, dot) + '_' + n + f.name.slice(dot) : f.name + '_' + n;
+    } else seen.set(f.name, 1);
+  }
+  const zip = buildZip(files);
+  const blob = new Blob([zip], { type: 'application/zip' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'merged_csvs.zip';
+  a.click();
+  URL.revokeObjectURL(url);
+});
+function mergedName(origName) {
+  return origName.replace(/\.csv$/i, '') + '_merged.csv';
+}
+function downloadCSV(rows, name) {
+  const csv = serializeCSV(rows);
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name; a.click();
+  URL.revokeObjectURL(url);
+}
+</script>
+</body>
+</html>
