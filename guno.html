@@ -121,24 +121,51 @@
   .empty { text-align: center; color: var(--muted); padding: 40px 20px; border: 1px dashed var(--border); border-radius: 10px; }
   .error { background: var(--del); color: var(--del-ink); padding: 10px 14px; border-radius: 6px; margin: 10px 0; font-size: 13px; }
   .notice { background: var(--warn); color: var(--warn-ink); padding: 10px 14px; border-radius: 6px; margin: 10px 0; font-size: 13px; }
+  .mode-toggle {
+    display: inline-flex; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 6px; padding: 3px; margin-bottom: 14px; gap: 2px;
+  }
+  .mode-toggle button {
+    border: none; background: transparent; padding: 8px 14px;
+    font-size: 12px; border-radius: 4px;
+  }
+  .mode-toggle button.active { background: var(--panel-2); color: var(--accent); font-weight: 600; }
+  .row .sub-meta { grid-column: 1 / -1; font-size: 11px; color: var(--muted); margin-top: -4px; }
+  .row .sub-meta b { color: var(--text); font-family: ui-monospace, monospace; }
+  .locale-banner {
+    background: var(--panel-2); border: 1px solid var(--accent); border-radius: 8px;
+    padding: 10px 14px; margin-bottom: 12px; font-size: 13px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .locale-banner .chip {
+    background: var(--accent); color: #0b1220; font-weight: 700;
+    padding: 4px 10px; border-radius: 4px; font-family: ui-monospace, monospace;
+    font-size: 12px; text-transform: uppercase;
+  }
+  .locale-banner .fn { font-family: ui-monospace, monospace; color: var(--muted); }
 </style>
 </head>
 <body>
 <header>
   <h1>CSV Translation Merge</h1>
-  <div class="sub">Batch-pair original + translated CSVs. Drop stale keys, preserve original defaults, overlay matching translations.</div>
+  <div class="sub">Batch-pair original + translated CSVs. Drop stale keys, preserve original source, overlay matching translations.</div>
 </header>
 <main>
+  <div class="mode-toggle" id="modeToggle">
+    <button data-mode="rune" class="active">TextTable</button>
+    <button data-mode="dialogue">Dialogue TextTable</button>
+  </div>
+
   <div class="upload-grid">
     <label class="drop" id="dropA">
       <h3>Originals (source of truth)</h3>
-      <div class="hint">Most up-to-date CSVs. Keys and Defaults here win. Drop multiple files.</div>
+      <div class="hint" id="hintA">Most up-to-date CSVs. Keys and Defaults here win. Drop multiple files.</div>
       <div class="file-list" id="listA"></div>
       <input type="file" accept=".csv,text/csv" id="fileA" multiple>
     </label>
     <label class="drop" id="dropB">
       <h3>Translated (stale but has translations)</h3>
-      <div class="hint">Older CSVs from translators. Translations pulled from here. Drop multiple files.</div>
+      <div class="hint" id="hintB">Older CSVs from translators. Translations pulled from here. Drop multiple files.</div>
       <div class="file-list" id="listB"></div>
       <input type="file" accept=".csv,text/csv" id="fileB" multiple>
     </label>
@@ -160,6 +187,7 @@
   </div>
 
   <div class="pair-tabs" id="pairTabs" hidden></div>
+  <div class="locale-banner" id="localeBanner" hidden></div>
   <div class="summary" id="summary" hidden></div>
   <div class="rows" id="rows"></div>
 </main>
@@ -336,6 +364,7 @@ function normalizeName(name) {
 
 //========== State ==========
 const state = {
+  mode: 'rune', // 'rune' | 'dialogue'
   filesA: new Map(), // name -> { name, rows, normKey }
   filesB: new Map(),
   pairs: [],         // [{ key, nameA, nameB, rowsA, rowsB, diffRows, merged, error }]
@@ -435,6 +464,8 @@ function clearResults() {
   state.activePair = 0;
   document.getElementById('pairTabs').hidden = true;
   document.getElementById('pairTabs').innerHTML = '';
+  const lb = document.getElementById('localeBanner');
+  if (lb) { lb.hidden = true; lb.innerHTML = ''; }
   document.getElementById('summary').hidden = true;
   document.getElementById('summary').innerHTML = '';
   document.getElementById('rows').innerHTML = '';
@@ -443,8 +474,8 @@ function clearResults() {
   document.getElementById('stats').innerHTML = '';
 }
 
-//========== Compare + merge ==========
-function compareOnePair(rowsA, rowsB) {
+//========== Compare + merge (RUNE mode: Field/Default, multi-locale in one file) ==========
+function compareOnePairRune(rowsA, rowsB) {
   if (!rowsA.length || !rowsB.length) throw new Error('Empty CSV');
   const headerA = rowsA[0], headerB = rowsB[0];
   if (headerA.length < 2 || headerA[0].trim().toLowerCase() !== 'field' || headerA[1].trim().toLowerCase() !== 'default')
@@ -504,6 +535,151 @@ function compareOnePair(rowsA, rowsB) {
       diffRows.push({ status: 'removed', field, defaultA: null, defaultB: rowsB[i][1] || '' });
   }
   return { diffRows, merged: mergedRows };
+}
+
+//========== Compare + merge (DIALOGUE mode: Conv+Entry / Original Text) ==========
+// Schema: row 0 = locale marker passthrough, row 1 = header, rows 2+ = data
+// Header: Conversation ID, Entry ID, Actor, Original Text, Translated Text [loc], Original Menu, Translated Menu [loc], Description
+function findColIdx(header, predicate) {
+  for (let i = 0; i < header.length; i++) if (predicate(header[i].trim().toLowerCase())) return i;
+  return -1;
+}
+function compareOnePairDialogue(rowsA, rowsB) {
+  if (rowsA.length < 2 || rowsB.length < 2) throw new Error('Dialogue CSV must have locale line + header line');
+
+  // rowsA[0] = locale marker, rowsA[1] = real header
+  const markerA = rowsA[0], headerA = rowsA[1];
+  const markerB = rowsB[0], headerB = rowsB[1];
+  const dataStartA = 2, dataStartB = 2;
+
+  const idxConvA = findColIdx(headerA, h => h === 'conversation id');
+  const idxEntryA = findColIdx(headerA, h => h === 'entry id');
+  const idxOrigTextA = findColIdx(headerA, h => h === 'original text');
+  const idxOrigMenuA = findColIdx(headerA, h => h === 'original menu');
+  const idxTransTextA = findColIdx(headerA, h => h.startsWith('translated text'));
+  const idxTransMenuA = findColIdx(headerA, h => h.startsWith('translated menu'));
+  const idxActorA = findColIdx(headerA, h => h === 'actor');
+
+  if (idxConvA < 0 || idxEntryA < 0 || idxOrigTextA < 0)
+    throw new Error('Original must have Conversation ID, Entry ID, Original Text columns');
+
+  const idxConvB = findColIdx(headerB, h => h === 'conversation id');
+  const idxEntryB = findColIdx(headerB, h => h === 'entry id');
+  const idxOrigTextB = findColIdx(headerB, h => h === 'original text');
+  const idxOrigMenuB = findColIdx(headerB, h => h === 'original menu');
+  const idxTransTextB = findColIdx(headerB, h => h.startsWith('translated text'));
+  const idxTransMenuB = findColIdx(headerB, h => h.startsWith('translated menu'));
+  if (idxConvB < 0 || idxEntryB < 0 || idxOrigTextB < 0)
+    throw new Error('Translated must have Conversation ID, Entry ID, Original Text columns');
+
+  const keyOf = (r, ic, ie) => (r[ic] || '') + '\u0001' + (r[ie] || '');
+
+  const mapB = new Map();
+  for (let i = dataStartB; i < rowsB.length; i++) {
+    const r = rowsB[i];
+    if (!r[idxConvB] && !r[idxEntryB]) continue;
+    mapB.set(keyOf(r, idxConvB, idxEntryB), r);
+  }
+  const setA = new Set();
+  for (let i = dataStartA; i < rowsA.length; i++) {
+    const r = rowsA[i];
+    if (!r[idxConvA] && !r[idxEntryA]) continue;
+    setA.add(keyOf(r, idxConvA, idxEntryA));
+  }
+
+  const outHeader = headerA.slice();
+  const numCols = outHeader.length;
+
+  const diffRows = [];
+  const mergedRows = [markerA.slice(), outHeader];
+
+  // extract locale label (e.g. "ja-jp") from header "Translated Text [ja-jp]"
+  const localeLabel = (() => {
+    if (idxTransTextA >= 0) {
+      const m = headerA[idxTransTextA].match(/\[([^\]]+)\]/);
+      if (m) return m[1];
+    }
+    if (markerA && markerA[0]) return markerA[0];
+    return '';
+  })();
+
+  for (let i = dataStartA; i < rowsA.length; i++) {
+    const aRow = rowsA[i];
+    const padded = aRow.slice();
+    while (padded.length < numCols) padded.push('');
+    const conv = padded[idxConvA] || '';
+    const entry = padded[idxEntryA] || '';
+    const actor = idxActorA >= 0 ? (padded[idxActorA] || '') : '';
+    const origTextA = padded[idxOrigTextA] || '';
+    const origMenuA = idxOrigMenuA >= 0 ? (padded[idxOrigMenuA] || '') : '';
+    const transTextA = idxTransTextA >= 0 ? (padded[idxTransTextA] || '') : '';
+    const transMenuA = idxTransMenuA >= 0 ? (padded[idxTransMenuA] || '') : '';
+
+    if (!conv && !entry) { mergedRows.push(padded); continue; }
+
+    const bRow = mapB.get(conv + '\u0001' + entry);
+    if (!bRow) {
+      if (origTextA || origMenuA)
+        diffRows.push({ status: 'added', conv, entry, actor, origTextA, origMenuA, transTextA, transMenuA });
+      mergedRows.push(padded);
+      continue;
+    }
+    const origTextB = idxOrigTextB >= 0 ? (bRow[idxOrigTextB] || '') : '';
+    const origMenuB = idxOrigMenuB >= 0 ? (bRow[idxOrigMenuB] || '') : '';
+    const transTextB = idxTransTextB >= 0 ? (bRow[idxTransTextB] || '') : '';
+    const transMenuB = idxTransMenuB >= 0 ? (bRow[idxTransMenuB] || '') : '';
+    const textMatches = origTextA === origTextB;
+    const menuMatches = origMenuA === origMenuB;
+
+    const outRow = padded.slice();
+    // translated text: overlay only if original text matches
+    if (idxTransTextA >= 0 && idxTransTextB >= 0) {
+      outRow[idxTransTextA] = textMatches ? transTextB : '';
+    }
+    // translated menu: overlay only if original menu matches
+    if (idxTransMenuA >= 0 && idxTransMenuB >= 0) {
+      outRow[idxTransMenuA] = menuMatches ? transMenuB : '';
+    }
+    mergedRows.push(outRow);
+
+    const textOnly = origTextA || origTextB;
+    const menuOnly = origMenuA || origMenuB;
+    const hasSomething = textOnly || menuOnly;
+    if (hasSomething && (!textMatches || !menuMatches)) {
+      diffRows.push({
+        status: 'changed', conv, entry, actor,
+        origTextA, origTextB, origMenuA, origMenuB,
+        transTextB, transMenuB,
+        textChanged: !textMatches && textOnly,
+        menuChanged: !menuMatches && menuOnly,
+      });
+    } else if (hasSomething) {
+      diffRows.push({ status: 'unchanged', conv, entry, actor, origTextA, origMenuA });
+    }
+  }
+
+  for (let i = dataStartB; i < rowsB.length; i++) {
+    const r = rowsB[i];
+    const conv = r[idxConvB] || '';
+    const entry = r[idxEntryB] || '';
+    if (!conv && !entry) continue;
+    if (!setA.has(conv + '\u0001' + entry)) {
+      diffRows.push({
+        status: 'removed', conv, entry,
+        actor: '',
+        origTextB: idxOrigTextB >= 0 ? (r[idxOrigTextB] || '') : '',
+        origMenuB: idxOrigMenuB >= 0 ? (r[idxOrigMenuB] || '') : '',
+        transTextB: idxTransTextB >= 0 ? (r[idxTransTextB] || '') : '',
+        transMenuB: idxTransMenuB >= 0 ? (r[idxTransMenuB] || '') : '',
+      });
+    }
+  }
+
+  return { diffRows, merged: mergedRows, localeLabel };
+}
+
+function compareOnePair(rowsA, rowsB) {
+  return state.mode === 'dialogue' ? compareOnePairDialogue(rowsA, rowsB) : compareOnePairRune(rowsA, rowsB);
 }
 
 function compareAll() {
@@ -602,8 +778,10 @@ function renderCurrentPair() {
     summaryEl.hidden = true; summaryEl.innerHTML = '';
     statsEl.innerHTML = '';
     rowsEl.innerHTML = `<div class="error">${escHTML(p.nameA)} ↔ ${escHTML(p.nameB)}: ${escHTML(p.error)}</div>`;
+    renderLocaleBanner(p);
     return;
   }
+  renderLocaleBanner(p);
   const counts = { unchanged: 0, changed: 0, added: 0, removed: 0 };
   for (const d of p.diffRows) counts[d.status]++;
   summaryEl.hidden = false;
@@ -616,6 +794,15 @@ function renderCurrentPair() {
                        <span><b>${p.diffRows.length}</b> total</span>`;
   renderRows(p);
 }
+function renderLocaleBanner(p) {
+  const el = document.getElementById('localeBanner');
+  if (!el) return;
+  if (state.mode !== 'dialogue' || !p || p.error) { el.hidden = true; el.innerHTML = ''; return; }
+  const label = p.localeLabel || '?';
+  el.hidden = false;
+  el.innerHTML = `<span class="chip">${escHTML(label)}</span>
+                  <span class="fn">${escHTML(p.nameA)} ↔ ${escHTML(p.nameB)}</span>`;
+}
 function card(k, v) {
   return `<div class="stat-card"><div class="k">${k}</div><div class="v">${v}</div></div>`;
 }
@@ -627,33 +814,114 @@ function renderRows(p) {
     return f === 'all' ? true : d.status === f;
   });
   if (!visible.length) { container.innerHTML = '<div class="empty">No rows match this filter.</div>'; return; }
-  const out = [];
-  for (const d of visible) {
-    let tag, tagCls, defaultBlock;
-    if (d.status === 'changed') {
-      tag = 'DEFAULT CHANGED'; tagCls = 'warn';
-      const a = tokenize(d.defaultB), b = tokenize(d.defaultA);
-      const diff = diffTokens(a, b);
-      defaultBlock =
-        `<div class="default">
-           <div class="side"><div class="lbl">Translated (old)</div>${renderDiffSide(diff, 'a')}</div>
-           <div class="side"><div class="lbl">Original (new, kept)</div>${renderDiffSide(diff, 'b')}</div>
-         </div>`;
-    } else if (d.status === 'added') {
-      tag = 'ADDED'; tagCls = 'add';
-      defaultBlock = `<div class="default">${escHTML(d.defaultA)}</div>`;
-    } else { // removed
-      tag = 'REMOVED (stale)'; tagCls = 'del';
-      defaultBlock = `<div class="default">${escHTML(d.defaultB)}</div>`;
-    }
-    out.push(`<div class="row ${d.status}">
-        <span class="tag ${tagCls}">${tag}</span>
-        <span class="field">${escHTML(d.field)}</span>
-        ${defaultBlock}
-      </div>`);
-  }
-  container.innerHTML = out.join('');
+  const renderer = state.mode === 'dialogue' ? renderRowDialogue : renderRowRune;
+  container.innerHTML = visible.map(renderer).join('');
 }
+
+function renderRowRune(d) {
+  let tag, tagCls, defaultBlock;
+  if (d.status === 'changed') {
+    tag = 'DEFAULT CHANGED'; tagCls = 'warn';
+    const a = tokenize(d.defaultB), b = tokenize(d.defaultA);
+    const diff = diffTokens(a, b);
+    defaultBlock =
+      `<div class="default">
+         <div class="side"><div class="lbl">Translated (old)</div>${renderDiffSide(diff, 'a')}</div>
+         <div class="side"><div class="lbl">Original (new, kept)</div>${renderDiffSide(diff, 'b')}</div>
+       </div>`;
+  } else if (d.status === 'added') {
+    tag = 'ADDED'; tagCls = 'add';
+    defaultBlock = `<div class="default">${escHTML(d.defaultA || '')}</div>`;
+  } else {
+    tag = 'REMOVED (stale)'; tagCls = 'del';
+    defaultBlock = `<div class="default">${escHTML(d.defaultB || '')}</div>`;
+  }
+  return `<div class="row ${d.status}">
+      <span class="tag ${tagCls}">${tag}</span>
+      <span class="field">${escHTML(d.field)}</span>
+      ${defaultBlock}
+    </div>`;
+}
+
+function renderRowDialogue(d) {
+  let tag, tagCls, body;
+  const idLine = `<span class="field">conv <b>${escHTML(d.conv)}</b> · entry <b>${escHTML(d.entry)}</b>${d.actor ? ' · ' + escHTML(d.actor) : ''}</span>`;
+  if (d.status === 'changed') {
+    tag = 'CHANGED'; tagCls = 'warn';
+    const parts = [];
+    if (d.textChanged) {
+      const diff = diffTokens(tokenize(d.origTextB || ''), tokenize(d.origTextA || ''));
+      parts.push(
+        `<div class="default">
+           <div class="side"><div class="lbl">Original Text · Translated (old)</div>${renderDiffSide(diff, 'a')}</div>
+           <div class="side"><div class="lbl">Original Text · Current (kept)</div>${renderDiffSide(diff, 'b')}</div>
+         </div>`
+      );
+      if (d.transTextB) {
+        parts.push(
+          `<div class="default">
+             <div class="side"><div class="lbl">Stale translation (will be dropped)</div><del>${escHTML(d.transTextB)}</del></div>
+           </div>`
+        );
+      }
+    }
+    if (d.menuChanged) {
+      const diff = diffTokens(tokenize(d.origMenuB || ''), tokenize(d.origMenuA || ''));
+      parts.push(
+        `<div class="default">
+           <div class="side"><div class="lbl">Original Menu · Translated (old)</div>${renderDiffSide(diff, 'a')}</div>
+           <div class="side"><div class="lbl">Original Menu · Current (kept)</div>${renderDiffSide(diff, 'b')}</div>
+         </div>`
+      );
+      if (d.transMenuB) {
+        parts.push(
+          `<div class="default">
+             <div class="side"><div class="lbl">Stale menu translation (will be dropped)</div><del>${escHTML(d.transMenuB)}</del></div>
+           </div>`
+        );
+      }
+    }
+    body = parts.join('');
+  } else if (d.status === 'added') {
+    tag = 'ADDED'; tagCls = 'add';
+    const bits = [];
+    if (d.origTextA) bits.push(`<div class="side"><div class="lbl">Original Text (needs translation)</div>${escHTML(d.origTextA)}</div>`);
+    if (d.origMenuA) bits.push(`<div class="side"><div class="lbl">Original Menu (needs translation)</div>${escHTML(d.origMenuA)}</div>`);
+    body = `<div class="default">${bits.join('')}</div>`;
+  } else { // removed
+    tag = 'REMOVED (stale)'; tagCls = 'del';
+    const bits = [];
+    if (d.origTextB) bits.push(`<div class="side"><div class="lbl">Original Text</div>${escHTML(d.origTextB)}</div>`);
+    if (d.transTextB) bits.push(`<div class="side"><div class="lbl">Stale translation (dropped)</div><del>${escHTML(d.transTextB)}</del></div>`);
+    if (d.origMenuB) bits.push(`<div class="side"><div class="lbl">Original Menu</div>${escHTML(d.origMenuB)}</div>`);
+    if (d.transMenuB) bits.push(`<div class="side"><div class="lbl">Stale menu translation (dropped)</div><del>${escHTML(d.transMenuB)}</del></div>`);
+    body = `<div class="default">${bits.join('')}</div>`;
+  }
+  return `<div class="row ${d.status}">
+      <span class="tag ${tagCls}">${tag}</span>
+      ${idLine}
+      ${body}
+    </div>`;
+}
+
+//========== Mode toggle ==========
+document.getElementById('modeToggle').addEventListener('click', e => {
+  const b = e.target.closest('button[data-mode]');
+  if (!b) return;
+  state.mode = b.dataset.mode;
+  document.querySelectorAll('#modeToggle button').forEach(x => x.classList.toggle('active', x === b));
+  const hintA = document.getElementById('hintA');
+  const hintB = document.getElementById('hintB');
+  if (state.mode === 'dialogue') {
+    hintA.textContent = 'Current Dialogue_<locale>.csv files (one per language). Drop multiple.';
+    hintB.textContent = 'Translator\u2019s stale Dialogue_<locale>.csv files. Drop multiple.';
+  } else {
+    hintA.textContent = 'Most up-to-date CSVs. Keys and Defaults here win. Drop multiple files.';
+    hintB.textContent = 'Older CSVs from translators. Translations pulled from here. Drop multiple files.';
+  }
+  state.compared = false;
+  clearResults();
+});
 
 //========== Buttons ==========
 document.getElementById('compareBtn').addEventListener('click', compareAll);
