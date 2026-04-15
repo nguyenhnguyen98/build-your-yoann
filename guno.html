@@ -775,8 +775,14 @@ function renderPairTabs() {
   if (state.pairs.length <= 1) { el.hidden = true; el.innerHTML = ''; return; }
   el.hidden = false;
   const buttons = state.pairs.map((p, i) => {
-    const total = p.diffRows ? p.diffRows.length : 0;
-    const changed = p.diffRows ? p.diffRows.filter(d => d.status !== 'unchanged').length : 0;
+    let total = 0, changed = 0;
+    if (p.rowStatus) {
+      total = p.rowStatus.length;
+      for (const s of p.rowStatus) if (s !== 'unchanged') changed++;
+    } else if (p.diffRows) {
+      total = p.diffRows.length;
+      changed = p.diffRows.filter(d => d.status !== 'unchanged').length;
+    }
     const broken = !!p.error;
     const badge = broken ? 'ERROR' : `${changed} / ${total}`;
     return `<div class="pair-tab ${i === state.activePair ? 'active' : ''} ${broken ? 'broken' : ''}" data-i="${i}">
@@ -808,8 +814,16 @@ function renderCurrentPair() {
     return;
   }
   renderLocaleBanner(p);
+  // Counts come from rowStatus (full row truth, matches export)
+  // except "removed" which only lives in diffRows (translated-only keys).
   const counts = { unchanged: 0, changed: 0, added: 0, removed: 0 };
-  for (const d of p.diffRows) counts[d.status]++;
+  if (p.rowStatus) {
+    for (const s of p.rowStatus) counts[s] = (counts[s] || 0) + 1;
+  } else {
+    for (const d of p.diffRows) if (d.status !== 'removed') counts[d.status]++;
+  }
+  for (const d of p.diffRows) if (d.status === 'removed') counts.removed++;
+  const dataTotal = counts.unchanged + counts.changed + counts.added;
   summaryEl.hidden = false;
   summaryEl.innerHTML =
     card('Unchanged', counts.unchanged) +
@@ -817,7 +831,7 @@ function renderCurrentPair() {
     card('Added (original-only)', counts.added) +
     card('Removed (stale)', counts.removed);
   statsEl.innerHTML = `<span><b>${p.nameA}</b> ↔ <b>${p.nameB}</b></span>
-                       <span><b>${p.diffRows.length}</b> total</span>`;
+                       <span><b>${dataTotal}</b> data rows · <b>${p.diffRows.length}</b> shown</span>`;
   renderRows(p);
 }
 function renderLocaleBanner(p) {
