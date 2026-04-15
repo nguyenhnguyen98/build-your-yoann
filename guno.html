@@ -143,6 +143,14 @@
     font-size: 12px; text-transform: uppercase;
   }
   .locale-banner .fn { font-family: ui-monospace, monospace; color: var(--muted); }
+  .export-opts {
+    display: inline-flex; gap: 10px; align-items: center;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px;
+  }
+  .export-opts label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; user-select: none; }
+  .export-opts input[type=checkbox] { accent-color: var(--accent); cursor: pointer; }
+  .export-opts .title { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; margin-right: 4px; }
 </style>
 </head>
 <body>
@@ -183,7 +191,13 @@
       <button data-f="removed">Removed</button>
     </div>
     <div class="stats" id="stats"></div>
-    <button id="exportBtn" disabled>Export all merged (ZIP)</button>
+    <div class="export-opts" id="exportOpts" hidden>
+      <span class="title">Include</span>
+      <label><input type="checkbox" data-inc="unchanged" checked> Unchanged</label>
+      <label><input type="checkbox" data-inc="changed" checked> Changed</label>
+      <label><input type="checkbox" data-inc="added" checked> Added</label>
+    </div>
+    <button id="exportBtn" disabled>Export merged (ZIP)</button>
   </div>
 
   <div class="pair-tabs" id="pairTabs" hidden></div>
@@ -471,6 +485,7 @@ function clearResults() {
   document.getElementById('rows').innerHTML = '';
   document.getElementById('exportBtn').disabled = true;
   document.getElementById('filter').hidden = true;
+  document.getElementById('exportOpts').hidden = true;
   document.getElementById('stats').innerHTML = '';
 }
 
@@ -498,6 +513,7 @@ function compareOnePairRune(rowsA, rowsB) {
 
   const diffRows = [];
   const mergedRows = [outHeader];
+  const rowStatus = []; // parallel to mergedRows[1..], values: 'unchanged'|'changed'|'added'
 
   for (let i = 1; i < rowsA.length; i++) {
     const aRow = rowsA[i];
@@ -510,6 +526,7 @@ function compareOnePairRune(rowsA, rowsB) {
     if (!bRow) {
       diffRows.push({ status: 'added', field, defaultA: padded[1], defaultB: null });
       mergedRows.push(padded);
+      rowStatus.push('added');
       continue;
     }
     const defaultA = padded[1] || '';
@@ -523,9 +540,11 @@ function compareOnePairRune(rowsA, rowsB) {
       }
       diffRows.push({ status: 'unchanged', field, defaultA, defaultB });
       mergedRows.push(outRow);
+      rowStatus.push('unchanged');
     } else {
       diffRows.push({ status: 'changed', field, defaultA, defaultB });
       mergedRows.push(padded);
+      rowStatus.push('changed');
     }
   }
   for (let i = 1; i < rowsB.length; i++) {
@@ -534,7 +553,7 @@ function compareOnePairRune(rowsA, rowsB) {
     if (!setA.has(field))
       diffRows.push({ status: 'removed', field, defaultA: null, defaultB: rowsB[i][1] || '' });
   }
-  return { diffRows, merged: mergedRows };
+  return { diffRows, merged: mergedRows, rowStatus, headerRows: 1 };
 }
 
 //========== Compare + merge (DIALOGUE mode: Conv+Entry / Original Text) ==========
@@ -592,6 +611,7 @@ function compareOnePairDialogue(rowsA, rowsB) {
 
   const diffRows = [];
   const mergedRows = [markerA.slice(), outHeader];
+  const rowStatus = []; // parallel to mergedRows[2..]
 
   // extract locale label (e.g. "ja-jp") from header "Translated Text [ja-jp]"
   const localeLabel = (() => {
@@ -615,13 +635,14 @@ function compareOnePairDialogue(rowsA, rowsB) {
     const transTextA = idxTransTextA >= 0 ? (padded[idxTransTextA] || '') : '';
     const transMenuA = idxTransMenuA >= 0 ? (padded[idxTransMenuA] || '') : '';
 
-    if (!conv && !entry) { mergedRows.push(padded); continue; }
+    if (!conv && !entry) { mergedRows.push(padded); rowStatus.push('unchanged'); continue; }
 
     const bRow = mapB.get(conv + '\u0001' + entry);
     if (!bRow) {
       if (origTextA || origMenuA)
         diffRows.push({ status: 'added', conv, entry, actor, origTextA, origMenuA, transTextA, transMenuA });
       mergedRows.push(padded);
+      rowStatus.push('added');
       continue;
     }
     const origTextB = idxOrigTextB >= 0 ? (bRow[idxOrigTextB] || '') : '';
@@ -653,8 +674,12 @@ function compareOnePairDialogue(rowsA, rowsB) {
         textChanged: !textMatches && textOnly,
         menuChanged: !menuMatches && menuOnly,
       });
+      rowStatus.push('changed');
     } else if (hasSomething) {
       diffRows.push({ status: 'unchanged', conv, entry, actor, origTextA, origMenuA });
+      rowStatus.push('unchanged');
+    } else {
+      rowStatus.push('unchanged');
     }
   }
 
@@ -675,7 +700,7 @@ function compareOnePairDialogue(rowsA, rowsB) {
     }
   }
 
-  return { diffRows, merged: mergedRows, localeLabel };
+  return { diffRows, merged: mergedRows, rowStatus, headerRows: 2, localeLabel };
 }
 
 function compareOnePair(rowsA, rowsB) {
@@ -731,6 +756,7 @@ function compareAll() {
   state.pairs = pairs;
   state.activePair = 0;
   state.compared = true;
+  document.getElementById('exportOpts').hidden = false;
 
   const notes = [];
   if (unpairedA.length) notes.push('Unmatched originals: ' + unpairedA.join(', '));
@@ -933,18 +959,37 @@ document.getElementById('filter').addEventListener('click', e => {
   const p = state.pairs[state.activePair];
   if (p && !p.error) renderRows(p);
 });
+function getIncludeSet() {
+  const boxes = document.querySelectorAll('#exportOpts input[type=checkbox]');
+  const inc = new Set();
+  boxes.forEach(b => { if (b.checked) inc.add(b.dataset.inc); });
+  return inc;
+}
+function filterMerged(p, inc) {
+  if (!p.rowStatus) return p.merged;
+  const hdr = p.headerRows || 1;
+  const out = p.merged.slice(0, hdr);
+  for (let i = hdr; i < p.merged.length; i++) {
+    const status = p.rowStatus[i - hdr] || 'unchanged';
+    if (inc.has(status)) out.push(p.merged[i]);
+  }
+  return out;
+}
 document.getElementById('exportBtn').addEventListener('click', () => {
   const good = state.pairs.filter(p => !p.error && p.merged);
   if (!good.length) return;
+  const inc = getIncludeSet();
+  if (inc.size === 0) { showError('Select at least one category to export.'); return; }
+  showError('');
   if (good.length === 1) {
     const p = good[0];
-    downloadCSV(p.merged, mergedName(p.nameA));
+    downloadCSV(filterMerged(p, inc), mergedName(p.nameA));
     return;
   }
   const enc = new TextEncoder();
   const files = good.map(p => ({
     name: mergedName(p.nameA),
-    data: enc.encode(serializeCSV(p.merged)),
+    data: enc.encode(serializeCSV(filterMerged(p, inc))),
   }));
   // avoid dup filenames
   const seen = new Map();
