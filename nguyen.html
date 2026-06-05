@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Official Credit Submission Portal (v3.1, BETA)</title>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f0e6d8; --panel: #fff8f0; --border: #d4c4b0; --text: #3a2e22;
+    --accent: #e85d3a; --green: #4caf50; --accent2: #f4a43a; --muted: #8a7a6a;
+    --shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Nunito', sans-serif; background: var(--bg); color: var(--text);
+    min-height: 100vh; padding: 24px 12px 80px;
+  }
+  .wrap { max-width: 560px; margin: 0 auto; background: var(--panel); border: 3px solid var(--border);
+          border-radius: 20px; padding: 22px 24px 30px; box-shadow: var(--shadow); position: relative;
+          text-align: center; }
+  h1 { font-family: 'Fredoka One', cursive; font-size: 1.7rem; color: var(--accent); margin-bottom: 2px; }
+  .blurb { font-weight: 700; color: var(--muted); font-size: .8rem; line-height: 1.5; margin-bottom: 18px; }
+  .step { display: none; }
+  .step.active { display: block; animation: pop .15s ease; }
+  @keyframes pop { from { transform: scale(.98); opacity: .4; } to { transform: scale(1); opacity: 1; } }
+  label { display: block; font-weight: 900; margin: 16px 0 5px; font-size: .9rem; }
+  .hint { font-weight: 700; font-size: .7rem; color: var(--muted); }
+  input[type=text], select {
+    width: 100%; padding: 11px 12px; border: 2px solid var(--border); border-radius: 12px;
+    font-family: 'Nunito', sans-serif; font-weight: 700; font-size: .95rem; background: #fff; color: var(--text);
+    text-align: center;
+  }
+  input[type=text]:focus, select:focus { outline: none; border-color: var(--accent); }
+  input[type=text]::placeholder { color: #bcb1a0; font-weight: 600; }
+
+  /* "Your name" is real, editable text — just styled grey so it looks like a placeholder */
+  .fake-ph { color: #bcb1a0; }
+
+  /* step 1 buttons stacked; tab order is rigged (see tabindex) */
+  .btn-stack { display: flex; flex-direction: column; align-items: center; gap: 8px; margin-top: 24px; }
+
+  /* department loading spinner (hidden via .hidden until you open it) */
+  .dept-loading { display: flex; align-items: center; justify-content: center; gap: 10px;
+                  padding: 11px 12px; border: 2px solid var(--border); border-radius: 12px;
+                  background: #fff; color: var(--muted); font-weight: 700; font-size: .95rem; }
+  .spinner-in { display: inline-block; width: 18px; height: 18px; border: 3px solid var(--border);
+                border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; flex-shrink: 0; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .err { color: #e53e3e; font-size: .78rem; min-height: 1em; margin-top: 5px; font-weight: 800; }
+
+  /* meter */
+  .meter { height: 8px; background: #e0d4c6; border-radius: 4px; overflow: hidden; margin-top: 7px; }
+  .meter > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .15s; }
+
+  /* buttons: same look as index.html — the cruelty is which one actually works */
+  .row { display: flex; gap: 8px; align-items: center; justify-content: center; margin-top: 24px; }
+  .btn { padding: 10px 28px; border: none; border-radius: 12px; font-family: 'Nunito', sans-serif;
+         font-weight: 900; font-size: .85rem; cursor: pointer; transition: all .15s; letter-spacing: .5px; }
+  .btn:hover { transform: translateY(-1px); }
+  .btn-primary { /* big tempting decoy */ padding: 14px 32px; font-size: 1rem;
+         background: var(--accent); color: #fff; box-shadow: 0 3px 12px rgba(232,93,58,.25); }
+  .btn-real { /* small one that actually works */ padding: 7px 14px; font-size: .72rem;
+         background: #fff; color: var(--text); border: 2px solid var(--border); }
+
+  /* fine print */
+  .fineprint { height: 150px; overflow-y: scroll; border: 2px solid var(--border); border-radius: 12px;
+               padding: 12px; background: #fff; margin-top: 6px; text-align: left; }
+  .fineprint p { margin: 0 0 8px; }
+
+  /* slider */
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+
+  /* popups */
+  .overlay { position: fixed; inset: 0; background: rgba(58,46,34,.55); z-index: 50; display: flex;
+             align-items: center; justify-content: center; padding: 16px; }
+  .hidden { display: none !important; }
+  .modal { background: var(--panel); border: 3px solid var(--border); border-radius: 18px; max-width: 380px;
+           padding: 22px; position: relative; box-shadow: 0 8px 30px rgba(0,0,0,.2); text-align: center; }
+  .modal h3 { font-family: 'Fredoka One', cursive; font-weight: 400; color: var(--accent); margin-bottom: 8px; }
+  .modal p { font-weight: 700; font-size: .82rem; color: var(--muted); line-height: 1.5; }
+  .modal .close { position: absolute; font-size: 9px; line-height: 1; cursor: pointer; color: #bbb;
+                  background: none; border: none; }
+  .accept-all { background: var(--accent); color: #fff; border: none; padding: 12px 22px;
+                font-family: 'Nunito', sans-serif; font-size: .9rem; font-weight: 900; border-radius: 12px;
+                cursor: pointer; white-space: nowrap; }
+  .reject-tiny { display: block; margin: 4px auto 0; font-size: 8px; color: #cbbfae;
+                 background: none; border: none; cursor: pointer; }
+
+  /* cookie consent — a bottom banner, like a real one */
+  .cookie-fader { position: fixed; inset: 0; z-index: 55; background: rgba(58,46,34,.08); }
+  .cookie-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 60;
+                background: var(--panel); border-top: 3px solid var(--border);
+                box-shadow: 0 -4px 20px rgba(0,0,0,.12);
+                display: flex; align-items: center; justify-content: space-between;
+                gap: 18px; flex-wrap: wrap; padding: 14px 20px; }
+  .cookie-text { flex: 1; min-width: 240px; text-align: left; }
+  .cookie-text strong { display: block; font-family: 'Fredoka One', cursive; font-weight: 400;
+                        color: var(--accent); font-size: .95rem; margin-bottom: 2px; }
+  .cookie-text span { font-weight: 700; font-size: .74rem; color: var(--muted); line-height: 1.45; }
+  .cookie-actions { display: flex; flex-direction: column; align-items: center; flex-shrink: 0; }
+
+  .ad { border-color: var(--accent2); }
+  .dodge { position: relative; }
+
+  /* step 0 — userinyerface-style gate: green decoy + a "link" hidden in plain sight */
+  .gate-intro { font-weight: 800; font-size: 1rem; color: var(--accent); margin-top: 8px; }
+  .no-btn { display: block; margin: 26px auto; width: 150px; height: 150px; border: none;
+            border-radius: 50%; background: var(--green); color: #fff; font-family: 'Fredoka One', cursive;
+            font-size: 2.2rem; cursor: pointer; box-shadow: 0 6px 16px rgba(0,0,0,.2); }
+  .no-btn:hover { transform: translateY(-1px); }
+  .gate-line { font-weight: 700; font-size: 1.05rem; color: var(--text); }
+  .decoy-link { text-decoration: underline; cursor: pointer; }
+  .real-next { color: #cabfae; cursor: pointer; }
+
+  /* leaderboard */
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: .85rem; font-family: 'Nunito', sans-serif; }
+  th, td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: left; }
+  th { background: var(--accent); color: #fff; font-weight: 900; }
+  tr:nth-child(even) td { background: #fffdf8; }
+  .rank1 td { background: #ffe9c2 !important; font-weight: 900; }
+  .me td { outline: 2px solid var(--accent); }
+  .banner { background: #e53e3e; color: #fff; padding: 10px 12px; font-weight: 800; font-size: .78rem;
+            border-radius: 12px; margin-bottom: 14px; }
+  .taunt { color: var(--accent); font-size: .8rem; font-weight: 900; min-height: 1em; margin-top: 8px; }
+</style>
+</head>
+<body>
+
+<!-- ============ POPUPS ============ -->
+<div id="cookieFader" class="cookie-fader"></div>
+<div id="cookie" class="cookie-bar">
+  <div class="cookie-text">
+    <strong>We Value Your Privacy (and so do our 1,247 partners)</strong>
+    <span>We use cookies, localStorage, and your webcam (kidding) (mostly). Keep going and you've agreed to all of it. Forever. Retroactively.</span>
+  </div>
+  <div class="cookie-actions">
+    <button class="accept-all" onclick="dismissCookie()">ACCEPT ALL &amp; CONTINUE</button>
+    <button class="reject-tiny" onclick="rejectCookies()">reject non-essential</button>
+  </div>
+</div>
+
+<div id="ad" class="overlay hidden">
+  <div class="modal ad">
+    <button class="close" id="adClose" style="top:50%; left:50%">✕</button>
+    <h3>CONGRATULATIONS</h3>
+    <p style="font-size:.8rem">You didn't win anything. Close this to lose anyway. The ✕ is around here somewhere.</p>
+  </div>
+</div>
+
+<!-- ============ FORM ============ -->
+<div class="wrap">
+  <h1>Official Credit Submission Portal</h1>
+  <p class="blurb">Complete every field correctly. Incorrect submissions aren't saved (probably). Required fields are marked with nothing.</p>
+
+  <div id="cfgBanner" class="banner hidden"></div>
+
+  <!-- STEP 0: THE GATE -->
+  <div class="step active" data-step="0">
+    <button class="no-btn" onclick="taunt('NO.')">NO</button>
+    <p class="gate-line">Please <span class="decoy-link" onclick="taunt('Not that one.')">click</span> <b>HERE</b> to GO to the <span class="real-next" onclick="show(1)">next page</span></p>
+    <div class="taunt" id="t0"></div>
+  </div>
+
+  <!-- STEP 1: NAME -->
+  <div class="step" data-step="1">
+    <label>Full Name <span class="hint"></span></label>
+    <input type="text" id="name" class="fake-ph" autocomplete="off" value="Your name" tabindex="2">
+    <div class="err" id="nameErr"></div>
+    <div class="btn-stack">
+      <button class="btn btn-primary" onclick="clearName()">CLEAR</button>
+      <button class="btn btn-real" tabindex="1" onclick="go(1)">proceed</button>
+    </div>
+    <div class="taunt" id="t1"></div>
+  </div>
+
+  <!-- STEP 2: ROLE + DEPARTMENT -->
+  <div class="step" data-step="2">
+    <label>Your Role</label>
+    <input type="text" id="role" autocomplete="off" placeholder="Role">
+    <div class="err" id="roleErr"></div>
+
+    <label>Department</label>
+    <div class="dept-wrap" id="deptWrap">
+      <select id="dept"><option value="">loading departments…</option></select>
+      <div class="dept-loading hidden" id="deptLoading"><span class="spinner-in"></span> contacting HR…</div>
+    </div>
+    <div class="err" id="deptErr"></div>
+
+    <div class="btn-stack">
+      <button class="btn btn-primary" type="button">SAVE</button>
+      <button class="btn btn-real" onclick="go(2)">next ›</button>
+    </div>
+    <div class="taunt" id="t2"></div>
+  </div>
+
+  <!-- STEP 3: AGREEMENTS + SUBMIT -->
+  <div class="step" data-step="3">
+    <p class="gate-line">Submit your credit. If you can.</p>
+    <div class="err" id="finalErr"></div>
+    <button class="btn btn-primary dodge" id="submitBtn" onmouseenter="dodge(this)" onclick="submitForm()">SUBMIT MY CREDIT</button>
+    <div class="taunt" id="t3"></div>
+  </div>
+
+  <!-- RESULT / LEADERBOARD -->
+  <div class="step" data-step="4">
+    <h1 style="margin-top:6px">The Credits</h1>
+    <p id="placed" style="font-weight:bold; color:#d6006e"></p>
+    <div id="board"></div>
+    <p style="margin-top:14px"><button class="btn btn-real" onclick="location.reload()">make someone else suffer</button></p>
+  </div>
+</div>
+
+<!-- ============ SUPABASE ============ -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+/* ============ CONFIG — fill these in ============ */
+const SUPABASE_URL             = "https://ceqqexfrkvlmiwipgfyv.supabase.co";               // e.g. https://abcd.supabase.co
+const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_5fdklr1SNd7JxtN6ts6-Ug_KZ0OS_iK";   // Settings → API Keys → Publishable key (sb_publishable_…)
+/* ================================================ */
+
+const configured = !SUPABASE_URL.startsWith("YOUR_") && !SUPABASE_PUBLISHABLE_KEY.startsWith("YOUR_");
+const sb = configured ? supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY) : null;
+
+const DEPARTMENTS = ["Direction", "Art", "Designer", "Programmer", "Specialist"];
+
+/* ---------- hidden timer (no UI, ever) ---------- */
+let startTime = null;
+function startTimer() { if (startTime === null) startTime = performance.now(); }
+window.addEventListener("pointerdown", startTimer);
+window.addEventListener("keydown", startTimer);
+
+/* ---------- popups ---------- */
+function closePopup(id) { document.getElementById(id).classList.add("hidden"); }
+function dismissCookie() {
+  document.getElementById("cookie").classList.add("hidden");
+  document.getElementById("cookieFader").classList.add("hidden");
+}
+function rejectCookies() {
+  // "rejecting" just opens an ad. classic.
+  dismissCookie();
+  document.getElementById("ad").classList.remove("hidden");
+}
+// the ad's ✕ scurries away, then eventually lets you close
+let adDodges = 0;
+const adClose = document.getElementById("adClose");
+adClose.addEventListener("mouseenter", () => {
+  adDodges++;
+  if (adDodges < 4) {
+    adClose.style.top = (10 + Math.random() * 75) + "%";
+    adClose.style.left = (10 + Math.random() * 80) + "%";
+  }
+});
+adClose.addEventListener("click", () => closePopup("ad"));
+
+/* ---------- step navigation ---------- */
+function show(step) {
+  document.querySelectorAll(".step").forEach(s => s.classList.remove("active"));
+  document.querySelector(`.step[data-step="${step}"]`).classList.add("active");
+}
+function taunt(msg) {
+  const active = document.querySelector(".step.active");
+  const t = active.querySelector(".taunt");
+  if (t) { t.textContent = msg; setTimeout(() => { if (t.textContent === msg) t.textContent = ""; }, 2500); }
+}
+
+const nameInput = document.getElementById("name");
+
+/* the prominent button just clears what you typed */
+function clearName() {
+  nameInput.value = "";
+  nameInput.focus();
+}
+
+/* the name is "incorrect" the first two submissions; the third one works */
+let nameAttempts = 0;
+const NAME_REJECTS = [
+  "That name is incorrect. Enter it again.",
+  "Still incorrect. Enter it again, but right this time.",
+];
+
+function go(step) {
+  if (step === 1) {
+    const v = nameInput.value.trim();
+    const err = document.getElementById("nameErr");
+    if (!v) { err.textContent = "We need a name. Any name. Yours, ideally."; return; }
+    if (nameAttempts < 2) {
+      err.textContent = NAME_REJECTS[nameAttempts];
+      nameAttempts++;
+      nameInput.value = "";
+      nameInput.focus();
+      return;
+    }
+    err.textContent = "";
+    show(2);
+  } else if (step === 2) {
+    const role = document.getElementById("role").value.trim();
+    const dept = document.getElementById("dept").value;
+    let ok = true;
+    if (!role) { document.getElementById("roleErr").textContent = "Role required. Loudly."; ok = false; }
+    else document.getElementById("roleErr").textContent = "";
+    if (!dept) { document.getElementById("deptErr").textContent = "Pick a department. From the menu. The one that fought you."; ok = false; }
+    else document.getElementById("deptErr").textContent = "";
+    if (ok) { show(3); }
+  }
+}
+
+/* department dropdown: shuffles its options every time you open it */
+const dept = document.getElementById("dept");
+function fillDept() {
+  const current = dept.value;
+  const shuffled = [...DEPARTMENTS].sort(() => Math.random() - 0.5);
+  dept.innerHTML = '<option value="">choose (final answer)</option>' +
+    shuffled.map(d => `<option value="${d}">${d}</option>`).join("");
+  dept.value = current;
+}
+let deptReady = false;
+dept.addEventListener("mousedown", (e) => {
+  if (!deptReady) {
+    e.preventDefault();
+    dept.classList.add("hidden");
+    document.getElementById("deptLoading").classList.remove("hidden");
+    setTimeout(() => {
+      deptReady = true;
+      fillDept();
+      document.getElementById("deptLoading").classList.add("hidden");
+      dept.classList.remove("hidden");
+    }, 1400);
+    return;
+  }
+  fillDept();
+});
+
+/* the submit button bolts across the viewport when the cursor nears it...
+   ...but ~1 in 10 times it freezes, and that's your window to actually click it */
+function dodge(el) {
+  if (Math.random() < 0.1) return;
+  const m = 16;
+  const x = m + Math.random() * Math.max(0, window.innerWidth - el.offsetWidth - m * 2);
+  const y = m + Math.random() * Math.max(0, window.innerHeight - el.offsetHeight - m * 2);
+  el.style.position = "fixed";
+  el.style.margin = "0";
+  el.style.transform = "none";
+  el.style.left = x + "px";
+  el.style.top = y + "px";
+}
+
+/* ---------- submit ---------- */
+function fmtTime(ms) {
+  const s = ms / 1000;
+  if (s < 60) return s.toFixed(1) + "s";
+  return Math.floor(s / 60) + "m " + (s % 60).toFixed(1) + "s";
+}
+
+async function submitForm() {
+  const name = nameInput.value.trim();
+  const role = document.getElementById("role").value.trim();
+  const dept = document.getElementById("dept").value;
+  const err = document.getElementById("finalErr");
+  err.textContent = "";
+
+  if (!name || !role || !dept) { err.textContent = "Something earlier is invalid. Start over, ideally."; return; }
+
+  const timeMs = Math.round(performance.now() - (startTime ?? performance.now()));
+
+  if (!sb) {
+    document.getElementById("placed").textContent = "(demo mode: no Supabase keys, so nothing saved)";
+    show(4); renderBoard([{ name, role, department: dept, time_ms: timeMs }], name);
+    return;
+  }
+
+  try {
+    const name_key = name.toLowerCase();
+    const { data: existing } = await sb.from("entries").select("time_ms").eq("name_key", name_key).maybeSingle();
+    if (!existing || timeMs < existing.time_ms) {
+      const { error } = await sb.from("entries")
+        .upsert({ name, role, department: dept, time_ms: timeMs, name_key }, { onConflict: "name_key" });
+      if (error) throw error;
+    }
+    await loadBoard(name_key);
+  } catch (e) {
+    err.textContent = "Save failed: " + (e.message || e) + ". The form betrayed you. Fitting.";
+  }
+}
+
+async function loadBoard(myKey) {
+  const { data, error } = await sb.from("entries").select("*").order("time_ms", { ascending: true });
+  if (error) { document.getElementById("finalErr").textContent = "Couldn't load the board: " + error.message; return; }
+  show(4);
+  const myRank = data.findIndex(r => r.name_key === myKey) + 1;
+  document.getElementById("placed").textContent = myRank
+    ? `You placed #${myRank} of ${data.length}. Turns out faster suffering ranks higher. Now you know.`
+    : "Submitted.";
+  renderBoard(data, null, myKey);
+}
+
+function renderBoard(rows, myName, myKey) {
+  const body = rows.map((r, i) => {
+    const mine = (myKey && r.name_key === myKey) || (myName && r.name === myName);
+    return `<tr class="${i === 0 ? "rank1" : ""} ${mine ? "me" : ""}">
+      <td>${i + 1}</td><td>${esc(r.name)}</td><td>${esc(r.role)}</td>
+      <td>${esc(r.department)}</td><td>${fmtTime(r.time_ms)}</td></tr>`;
+  }).join("");
+  document.getElementById("board").innerHTML =
+    `<table><thead><tr><th>#</th><th>Name</th><th>Role</th><th>Dept</th><th>Time</th></tr></thead><tbody>${body}</tbody></table>`;
+}
+
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+/* config banner for the owner */
+if (!configured) {
+  const b = document.getElementById("cfgBanner");
+  b.classList.remove("hidden");
+  b.textContent = "Owner: set SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY in credit.html. Running in demo mode, nothing saves.";
+}
+</script>
+</body>
+</html>
