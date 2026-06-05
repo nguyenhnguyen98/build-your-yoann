@@ -116,13 +116,16 @@
   .decoy-link { text-decoration: underline; cursor: pointer; }
   .real-next { color: #cabfae; cursor: pointer; }
 
-  /* leaderboard */
-  table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: .85rem; font-family: 'Nunito', sans-serif; }
-  th, td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: left; }
-  th { background: var(--accent); color: #fff; font-weight: 900; }
-  tr:nth-child(even) td { background: #fffdf8; }
-  .rank1 td { background: #ffe9c2 !important; font-weight: 900; }
-  .me td { outline: 2px solid var(--accent); }
+  /* leaderboard — styled like a film credit roll */
+  .credits-note { font-weight: 700; font-size: .82rem; color: var(--muted); line-height: 1.5; margin: 4px 0 14px; }
+  .credit-roll { text-align: center; padding: 6px 0; }
+  .credit-entry { padding: 16px 0; border-bottom: 1px dashed var(--border); }
+  .credit-entry:last-child { border-bottom: none; }
+  .credit-rank { font-size: .72rem; font-weight: 800; letter-spacing: 1.5px; color: var(--accent2); }
+  .credit-name { font-family: 'Fredoka One', cursive; font-size: 1.4rem; color: var(--text); margin: 1px 0 2px; }
+  .credit-entry.me .credit-name { color: var(--accent); }
+  .credit-role { font-weight: 700; font-size: .82rem; color: var(--muted); }
+  .credit-time { font-weight: 700; font-size: .72rem; color: #b9ad9b; margin-top: 3px; }
   .banner { background: #e53e3e; color: #fff; padding: 10px 12px; font-weight: 800; font-size: .78rem;
             border-radius: 12px; margin-bottom: 14px; }
   .taunt { color: var(--accent); font-size: .8rem; font-weight: 900; min-height: 1em; margin-top: 8px; }
@@ -209,6 +212,7 @@
   <!-- RESULT / LEADERBOARD -->
   <div class="step" data-step="4">
     <h1 style="margin-top:6px">The Credits</h1>
+    <p class="credits-note">Your place in the credits was decided by how fast you got through the form. The quicker you suffered, the higher you roll.</p>
     <p id="placed" style="font-weight:bold; color:#d6006e"></p>
     <div id="board"></div>
     <p style="margin-top:14px"><button class="btn btn-real" onclick="location.reload()">make someone else suffer</button></p>
@@ -399,14 +403,16 @@ async function loadBoard(myKey) {
 }
 
 function renderBoard(rows, myName, myKey) {
-  const body = rows.map((r, i) => {
+  const items = rows.map((r, i) => {
     const mine = (myKey && r.name_key === myKey) || (myName && r.name === myName);
-    return `<tr class="${i === 0 ? "rank1" : ""} ${mine ? "me" : ""}">
-      <td>${i + 1}</td><td>${esc(r.name)}</td><td>${esc(r.role)}</td>
-      <td>${esc(r.department)}</td><td>${fmtTime(r.time_ms)}</td></tr>`;
+    return `<div class="credit-entry${mine ? " me" : ""}">
+      <div class="credit-rank">#${i + 1}</div>
+      <div class="credit-name">${esc(r.name)}</div>
+      <div class="credit-role">${esc(r.role)} &middot; ${esc(r.department)}</div>
+      <div class="credit-time">${fmtTime(r.time_ms)}</div>
+    </div>`;
   }).join("");
-  document.getElementById("board").innerHTML =
-    `<table><thead><tr><th>#</th><th>Name</th><th>Role</th><th>Dept</th><th>Time</th></tr></thead><tbody>${body}</tbody></table>`;
+  document.getElementById("board").innerHTML = `<div class="credit-roll">${items}</div>`;
 }
 
 function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
