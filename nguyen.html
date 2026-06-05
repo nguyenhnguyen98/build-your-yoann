@@ -47,6 +47,9 @@
   .spinner-in { display: inline-block; width: 18px; height: 18px; border: 3px solid var(--border);
                 border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; flex-shrink: 0; }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  .adblock-warn { background: #fff3cd; border: 2px solid var(--accent2); color: #7a5c00;
+                  border-radius: 12px; padding: 10px 14px; font-weight: 800; font-size: .78rem; margin-bottom: 14px; }
   .err { color: #e53e3e; font-size: .78rem; min-height: 1em; margin-top: 5px; font-weight: 800; }
 
   /* meter */
@@ -154,6 +157,7 @@
   <p class="blurb">Complete every field correctly. Incorrect submissions aren't saved (probably). Required fields are marked with nothing.</p>
 
   <div id="cfgBanner" class="banner hidden"></div>
+  <div class="adblock-warn">Ad blocker detected. Please disable it so our ad can interrupt you properly.</div>
 
   <!-- STEP 0: THE GATE -->
   <div class="step active" data-step="0">
