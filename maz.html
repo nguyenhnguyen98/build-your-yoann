@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rune Codex</title>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f0e6d8;
+    --panel: #fff8f0;
+    --border: #d4c4b0;
+    --text: #3a2e22;
+    --muted: #8a7a6a;
+    --accent: #e85d3a;
+    --shadow: 0 2px 8px rgba(0,0,0,0.08);
+    --shadow-lg: 0 12px 32px rgba(58,46,34,0.18);
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html { scroll-behavior:smooth; }
+  body {
+    font-family:'Nunito', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ===== HEADER ===== */
+  header {
+    text-align:center;
+    padding: 36px 20px 20px;
+    max-width: 760px; margin: 0 auto;
+  }
+  h1 {
+    font-family:'Fredoka One', cursive;
+    font-size: clamp(2rem, 1.2rem + 4vw, 3.2rem);
+    color: var(--accent);
+    letter-spacing: 0.5px;
+  }
+  .sub { color: var(--muted); font-weight:700; margin-top: 6px; }
+  .count { color: var(--muted); font-weight:800; font-size: 0.8rem; margin-top: 12px; }
+  .count b { color: var(--text); }
+
+  /* ===== CONTROLS ===== */
+  .controls {
+    position: sticky; top: 0; z-index: 30;
+    background: rgba(240,230,216,0.92);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 16px;
+  }
+  .controls-inner {
+    max-width: 1180px; margin: 0 auto;
+    display:flex; flex-wrap:wrap; gap: 10px; align-items:center;
+  }
+  .search {
+    flex: 1 1 220px; min-width: 180px;
+    padding: 10px 14px; border:2px solid var(--border); border-radius: 12px;
+    font-family:'Nunito',sans-serif; font-weight:700; font-size:0.9rem;
+    background: var(--panel); color: var(--text);
+  }
+  .search:focus { outline:none; border-color: var(--accent); }
+  select {
+    padding: 10px 12px; border:2px solid var(--border); border-radius: 12px;
+    font-family:'Nunito',sans-serif; font-weight:800; font-size:0.82rem;
+    background: var(--panel); color: var(--text); cursor:pointer;
+  }
+  select:focus { outline:none; border-color: var(--accent); }
+
+  .toggle {
+    display:inline-flex; align-items:center; gap:8px;
+    padding: 9px 14px; border-radius: 12px; cursor:pointer;
+    font-weight:900; font-size:0.78rem; letter-spacing:0.4px;
+    border:2px solid var(--border); background: var(--panel);
+    transition: all 0.15s; user-select:none;
+  }
+  .toggle .dot {
+    width:34px; height:18px; border-radius:10px; background:#d4c4b0;
+    position:relative; transition: background 0.18s; flex-shrink:0;
+  }
+  .toggle .dot::after {
+    content:''; position:absolute; top:2px; left:2px;
+    width:14px; height:14px; border-radius:50%; background:#fff;
+    transition: transform 0.18s;
+  }
+  .toggle.on { border-color: var(--accent); color: var(--accent); }
+  .toggle.on .dot { background: var(--accent); }
+  .toggle.on .dot::after { transform: translateX(16px); }
+
+  .lang {
+    display:inline-flex; border:2px solid var(--border); border-radius:12px; overflow:hidden;
+  }
+  .lang button {
+    border:none; background: var(--panel); color: var(--muted);
+    font-family:'Nunito',sans-serif; font-weight:900; font-size:0.78rem;
+    padding: 9px 14px; cursor:pointer; transition: all 0.15s;
+  }
+  .lang button.active { background: var(--accent); color:#fff; }
+
+  /* ===== GRID ===== */
+  .grid {
+    max-width: 1180px; margin: 20px auto 60px; padding: 0 16px;
+    display:grid; gap: 14px;
+    grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  }
+  .card {
+    background: var(--panel);
+    border:1px solid var(--border);
+    border-top: 4px solid var(--el, var(--accent));
+    border-radius: 16px; padding: 14px 14px 16px;
+    cursor:pointer; position:relative;
+    transition: transform 0.16s, box-shadow 0.16s;
+    box-shadow: var(--shadow);
+    display:flex; flex-direction:column; align-items:center; text-align:center;
+  }
+  .card:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); }
+  .card .ico {
+    width: 92px; height:92px; object-fit:contain;
+    filter: drop-shadow(0 3px 6px rgba(0,0,0,0.18));
+  }
+  .card .ico.placeholder {
+    display:flex; align-items:center; justify-content:center;
+    background: #efe4d4; border-radius:14px; color: var(--muted);
+    font-family:'Fredoka One',cursive; font-size:1.6rem;
+  }
+  .card .nm {
+    font-weight:900; font-size:0.92rem; margin-top:10px; line-height:1.2;
+    min-height: 2.2em; display:flex; align-items:center;
+    overflow-wrap:anywhere; word-break:break-word;
+  }
+  .badges { display:flex; gap:5px; flex-wrap:wrap; justify-content:center; margin-top:8px; }
+  .badge {
+    font-size:0.64rem; font-weight:900; letter-spacing:0.4px;
+    padding: 3px 8px; border-radius: 999px; text-transform:uppercase;
+    background:#efe4d4; color: var(--muted);
+  }
+  .badge.el { background: var(--el); color:#fff; }
+  .badge.tier { background: var(--text); color:#fff; }
+  .badge.locked { background:#c94b2c; color:#fff; }
+  .empty { text-align:center; color: var(--muted); font-weight:800; padding: 80px 20px; grid-column:1/-1; }
+
+  /* ===== MODAL ===== */
+  .overlay {
+    position: fixed; inset:0; z-index:60;
+    background: rgba(40,30,20,0.55);
+    display:none; align-items:center; justify-content:center; padding:20px;
+    backdrop-filter: blur(3px);
+  }
+  .overlay.open { display:flex; }
+  .modal {
+    background: var(--panel); border-radius: 22px;
+    border-top: 6px solid var(--el, var(--accent));
+    max-width: 460px; width:100%; max-height: 88vh; overflow-y:auto;
+    box-shadow: var(--shadow-lg); padding: 24px;
+    position:relative; animation: pop 0.18s ease;
+  }
+  @keyframes pop { from { transform: scale(0.94); opacity:0; } to { transform:scale(1); opacity:1; } }
+  .modal .close {
+    position:absolute; top:14px; right:14px;
+    width:32px; height:32px; border-radius:50%; border:none; cursor:pointer;
+    background:#efe4d4; color: var(--muted); font-size:1.1rem; font-weight:900;
+  }
+  .modal .close:hover { background:#e2d3c0; }
+  .modal-head { display:flex; gap:16px; align-items:center; }
+  .modal-head img { width:96px; height:96px; object-fit:contain; flex-shrink:0;
+    filter: drop-shadow(0 3px 8px rgba(0,0,0,0.2)); }
+  .modal h2 { font-family:'Fredoka One',cursive; font-size:1.4rem; color: var(--text); line-height:1.1; overflow-wrap:anywhere; }
+  .modal .devid { color: var(--muted); font-weight:800; font-size:0.72rem; margin-top:4px; font-family: monospace; }
+  .modal .badges { justify-content:flex-start; margin: 16px 0; }
+  .modal .effect { font-weight:700; line-height:1.55; font-size:0.95rem; }
+  .modal .flavor { font-style:italic; color: var(--muted); font-weight:600; margin-top:12px; line-height:1.5; font-size:0.88rem; }
+  .stats { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:18px; }
+  .stat { background:#efe4d4; border-radius:10px; padding:8px 12px; }
+  .stat .k { font-size:0.66rem; font-weight:900; text-transform:uppercase; color:var(--muted); letter-spacing:0.4px; }
+  .stat .v { font-weight:900; font-size:0.95rem; }
+  .tags { display:flex; flex-wrap:wrap; gap:5px; margin-top:14px; }
+  .tag { font-size:0.68rem; font-weight:800; background:#efe4d4; color:var(--muted); padding:3px 9px; border-radius:999px; font-family:monospace; }
+  .sec-label { font-size:0.66rem; font-weight:900; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); margin:16px 0 7px; }
+  .sec-label .hint { text-transform:none; font-weight:700; opacity:0.8; }
+  .attrs { display:flex; flex-wrap:wrap; gap:6px; }
+  .attr {
+    font-size:0.78rem; font-weight:800; padding:5px 11px; border-radius:10px;
+    background: color-mix(in srgb, var(--el) 14%, #fff);
+    border:1px solid color-mix(in srgb, var(--el) 35%, #fff);
+    color: color-mix(in srgb, var(--el) 60%, #000);
+  }
+
+  footer { text-align:center; color:var(--muted); font-weight:700; font-size:0.74rem; padding: 0 20px 40px; }
+  footer a { color: var(--accent); }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Rune Codex</h1>
+    <p class="sub">Every rune from Dungeons, pulled straight from the game data.</p>
+    <p class="count" id="count"></p>
+  </header>
+
+  <div class="controls">
+    <div class="controls-inner">
+      <input class="search" id="search" type="text" placeholder="Search by name, id or tag…" autocomplete="off">
+      <select id="f-element"></select>
+      <select id="f-category"></select>
+      <select id="f-subtype"></select>
+      <select id="f-tier"></select>
+      <div class="toggle" id="demoToggle" role="switch" aria-checked="false" tabindex="0">
+        <span class="dot"></span><span>Demo only</span>
+      </div>
+      <div class="lang">
+        <button data-lang="en" class="active">EN</button>
+        <button data-lang="fr">FR</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid" id="grid"></div>
+
+  <div class="overlay" id="overlay">
+    <div class="modal" id="modal"></div>
+  </div>
+
+  <footer>Generated from the Dungeons project · <a href="index.html">back to Yoann</a></footer>
+
+<script>
+const EL_COLORS = {
+  Fire:'#e8543a', Ice:'#4aa8d8', Lightning:'#e0b830', Earth:'#b0843c',
+  Air:'#5bbf9a', Light:'#e6b94a', Void:'#8a5cc4', Neutral:'#9a8a78', Unknown:'#9a8a78'
+};
+
+let RUNES = [];
+let lang = 'en';
+let demoOnly = false;
+
+const $ = id => document.getElementById(id);
+const elColor = el => EL_COLORS[el] || EL_COLORS.Neutral;
+
+function unique(key) {
+  return [...new Set(RUNES.map(r => r[key]).filter(Boolean))].sort();
+}
+
+function fillSelect(sel, label, values) {
+  sel.innerHTML = `<option value="">${label}</option>` +
+    values.map(v => `<option value="${v}">${v}</option>`).join('');
+}
+
+function matches(r, q) {
+  if (demoOnly && !r.inDemo) return false;
+  if ($('f-element').value && r.element !== $('f-element').value) return false;
+  if ($('f-category').value && r.category !== $('f-category').value) return false;
+  if ($('f-subtype').value && r.subType !== $('f-subtype').value) return false;
+  if ($('f-tier').value && String(r.tier) !== $('f-tier').value) return false;
+  if (q) {
+    const hay = (r.name[lang] + ' ' + r.devId + ' ' + r.tags.join(' ')).toLowerCase();
+    if (!hay.includes(q)) return false;
+  }
+  return true;
+}
+
+function cardHTML(r) {
+  const col = elColor(r.element);
+  const name = r.name[lang] || r.name.en || r.devId;
+  const ico = r.icon
+    ? `<img class="ico" src="rune-data/${r.icon}" alt="" loading="lazy">`
+    : `<div class="ico placeholder">?</div>`;
+  const locked = !r.inDemo ? `<span class="badge locked">Locked</span>` : '';
+  return `<div class="card" style="--el:${col}" data-id="${r.devId}">
+    ${ico}
+    <div class="nm">${name}</div>
+    <div class="badges">
+      <span class="badge el">${r.element}</span>
+      <span class="badge tier">T${r.tier}</span>
+      <span class="badge">${r.subType}</span>
+      ${locked}
+    </div>
+  </div>`;
+}
+
+function render() {
+  const q = $('search').value.trim().toLowerCase();
+  const list = RUNES.filter(r => matches(r, q));
+  const grid = $('grid');
+  grid.innerHTML = list.length
+    ? list.map(cardHTML).join('')
+    : `<div class="empty">No runes match your filters.</div>`;
+  $('count').innerHTML = `Showing <b>${list.length}</b> of <b>${RUNES.length}</b> runes`;
+}
+
+function openModal(r) {
+  const col = elColor(r.element);
+  const name = r.name[lang] || r.name.en || r.devId;
+  const effect = r.effect[lang] || r.effect.en || '';
+  const ico = r.icon ? `<img src="rune-data/${r.icon}" alt="">` : '';
+  const flavor = r.flavor ? `<p class="flavor">“${r.flavor}”</p>` : '';
+  const tags = r.tags.length ? `<div class="tags">${r.tags.map(t=>`<span class="tag">${t}</span>`).join('')}</div>` : '';
+  const attrs = (r.attributes && r.attributes.length)
+    ? `<div class="sec-label">Attributes <span class="hint">— values scale in-game</span></div>
+       <div class="attrs">${r.attributes.map(a=>`<span class="attr">${a[lang]||a.en}</span>`).join('')}</div>`
+    : '';
+  const lvl = r.maxLevel > 1 ? `${r.level} / ${r.maxLevel}` : '—';
+  $('modal').style.setProperty('--el', col);
+  $('modal').innerHTML = `
+    <button class="close" id="closeBtn" aria-label="Close">✕</button>
+    <div class="modal-head">
+      ${ico}
+      <div>
+        <h2>${name}</h2>
+        <div class="devid">${r.devId}</div>
+      </div>
+    </div>
+    <div class="badges">
+      <span class="badge el" style="background:${col}">${r.element}</span>
+      <span class="badge tier">Tier ${r.tier}</span>
+      <span class="badge">${r.subType}</span>
+      ${r.isPrimordial ? '<span class="badge">Primordial</span>' : ''}
+      ${!r.inDemo ? '<span class="badge locked">Not in demo</span>' : ''}
+    </div>
+    ${effect ? `<p class="effect">${effect}</p>` : ''}
+    ${flavor}
+    ${attrs}
+    <div class="stats">
+      <div class="stat"><div class="k">Power</div><div class="v">${r.power}</div></div>
+      <div class="stat"><div class="k">Level</div><div class="v">${lvl}</div></div>
+      <div class="stat"><div class="k">Category</div><div class="v">${r.category}</div></div>
+      <div class="stat"><div class="k">In demo</div><div class="v">${r.inDemo ? 'Yes' : 'No'}</div></div>
+    </div>
+    ${tags}`;
+  $('closeBtn').onclick = closeModal;
+  $('overlay').classList.add('open');
+}
+function closeModal() { $('overlay').classList.remove('open'); }
+
+// ===== events =====
+$('grid').addEventListener('click', e => {
+  const card = e.target.closest('.card');
+  if (!card) return;
+  const r = RUNES.find(x => x.devId === card.dataset.id);
+  if (r) openModal(r);
+});
+$('overlay').addEventListener('click', e => { if (e.target === $('overlay')) closeModal(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+['search','f-element','f-category','f-subtype','f-tier'].forEach(id =>
+  $(id).addEventListener('input', render));
+
+const demoToggle = $('demoToggle');
+function toggleDemo() {
+  demoOnly = !demoOnly;
+  demoToggle.classList.toggle('on', demoOnly);
+  demoToggle.setAttribute('aria-checked', demoOnly);
+  render();
+}
+demoToggle.addEventListener('click', toggleDemo);
+demoToggle.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleDemo(); } });
+
+document.querySelectorAll('.lang button').forEach(btn =>
+  btn.addEventListener('click', () => {
+    lang = btn.dataset.lang;
+    document.querySelectorAll('.lang button').forEach(b => b.classList.toggle('active', b === btn));
+    render();
+  }));
+
+// ===== init =====
+fetch('rune-data/runes.json')
+  .then(r => r.json())
+  .then(data => {
+    RUNES = data;
+    fillSelect($('f-element'), 'All elements', unique('element'));
+    fillSelect($('f-category'), 'All categories', unique('category'));
+    fillSelect($('f-subtype'), 'All types', unique('subType'));
+    fillSelect($('f-tier'), 'All tiers', [...new Set(RUNES.map(r => r.tier))].sort((a,b)=>a-b).map(String));
+    render();
+  })
+  .catch(err => {
+    const fileProto = location.protocol === 'file:';
+    $('grid').innerHTML = fileProto
+      ? `<div class="empty">This page needs to run on a web server — opening the file directly blocks data loading.<br><br>
+         From the project folder run:<br><code style="font-family:monospace;background:#efe4d4;padding:4px 8px;border-radius:6px;display:inline-block;margin-top:6px;">python3 -m http.server 8000</code><br>
+         then open <code style="font-family:monospace;">http://localhost:8000/maz.html</code>.<br><br>(On the live site it just works.)</div>`
+      : `<div class="empty">Couldn’t load rune data.<br>Run the extractor in rune-data/ first.</div>`;
+    console.error(err);
+  });
+</script>
+</body>
+</html>
