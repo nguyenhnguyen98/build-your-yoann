@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Memory Compendium</title>
+<style>
+  :root {
+    --bg: #07080f;
+    --panel-bg-1: #161a30;
+    --panel-bg-2: #241a35;
+    --text-main: #e7e6f0;
+    --text-dim: #9d9bb0;
+    --keyword-color: #2eecd2;
+    --negative-color: #ff4346;
+    --border-dim: #3a3f63;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    padding: 40px 24px 60px;
+    background: radial-gradient(circle at 50% 0%, #131830 0%, var(--bg) 65%);
+    color: var(--text-main);
+    font-family: "Segoe UI", "Trebuchet MS", Tahoma, sans-serif;
+  }
+
+  h1 {
+    text-align: center;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin: 0 0 6px;
+    font-size: 34px;
+    background: linear-gradient(90deg, #8588ff, #e63de4, #fffb3d);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  #subtitle {
+    text-align: center;
+    color: var(--text-dim);
+    margin: 0 0 30px;
+    font-size: 14px;
+  }
+
+  #toolbar {
+    max-width: 1200px;
+    margin: 0 auto 24px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: center;
+  }
+
+  #toolbar input, #toolbar select {
+    background: var(--panel-bg-1);
+    border: 1px solid var(--border-dim);
+    color: var(--text-main);
+    padding: 10px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+
+  #toolbar input:focus, #toolbar select:focus {
+    border-color: var(--keyword-color);
+    box-shadow: 0 0 0 3px rgba(46, 236, 210, 0.15);
+  }
+
+  #toolbar input { flex: 1 1 260px; min-width: 200px; }
+
+  #sortbar {
+    max-width: 1200px;
+    margin: 0 auto 16px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: center;
+    align-items: center;
+  }
+
+  #sortbar .sortbar-label {
+    color: var(--text-dim);
+    font-size: 13px;
+    margin-right: 2px;
+  }
+
+  #sortbar select, #sortbar button {
+    background: var(--panel-bg-1);
+    border: 1px solid var(--border-dim);
+    color: var(--text-main);
+    padding: 8px 12px;
+    border-radius: 20px;
+    font-size: 13px;
+    outline: none;
+    cursor: pointer;
+    transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+  }
+
+  #sortbar select:focus, #sortbar button:focus { border-color: var(--keyword-color); }
+  #sortbar button:hover { background: #1f244a; }
+
+  #sort-add-btn { border-color: var(--keyword-color); color: var(--keyword-color); }
+
+  #sort-chips {
+    max-width: 1200px;
+    margin: 0 auto 22px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+  }
+
+  .sort-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--panel-bg-2);
+    border: 1px solid var(--keyword-color);
+    color: var(--text-main);
+    border-radius: 16px;
+    padding: 5px 6px 5px 12px;
+    font-size: 12px;
+  }
+
+  .chip-remove {
+    cursor: pointer;
+    color: var(--text-dim);
+    font-weight: 700;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .chip-remove:hover { background: rgba(255,255,255,0.1); color: var(--text-main); }
+
+  #count {
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 12px;
+    margin-bottom: 22px;
+    letter-spacing: 0.03em;
+  }
+
+  #grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 30px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+
+  #empty-state {
+    text-align: center;
+    color: var(--text-dim);
+    padding: 60px 20px;
+    font-size: 14px;
+  }
+
+  .card {
+    position: relative;
+    background: linear-gradient(160deg, var(--panel-bg-1) 0%, var(--panel-bg-2) 100%);
+    border-radius: 14px;
+    border: 2px solid var(--tier-color, #555);
+    box-shadow: 0 0 22px -4px var(--tier-color, transparent), 0 8px 24px rgba(0,0,0,0.5);
+    padding: 46px 20px 18px;
+    transition: transform 0.18s ease, box-shadow 0.18s ease;
+  }
+
+  .card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 0 32px -2px var(--tier-color, transparent), 0 14px 30px rgba(0,0,0,0.55);
+  }
+
+  .card::before {
+    content: "";
+    position: absolute;
+    top: -60px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 220px;
+    height: 140px;
+    background: radial-gradient(circle, var(--tier-color, #888) 0%, transparent 70%);
+    opacity: 0.35;
+    pointer-events: none;
+  }
+
+  .medallion {
+    position: absolute;
+    top: -30px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, var(--element-color, #888), #1a1a1a 85%);
+    border: 3px solid var(--tier-color, #555);
+    box-shadow: 0 0 14px var(--tier-color, transparent);
+    overflow: hidden;
+  }
+
+  .medallion img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .download-btn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: rgba(0,0,0,0.45);
+    border: 1px solid var(--border-dim);
+    color: var(--text-main);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+    font-size: 14px;
+    opacity: 0;
+    transition: opacity 0.15s, background 0.15s;
+  }
+
+  .card:hover .download-btn { opacity: 1; }
+  .download-btn:hover { background: rgba(0,0,0,0.7); border-color: var(--keyword-color); }
+
+  .memory-name {
+    text-align: center;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 18px;
+    color: var(--element-color, #fff);
+    text-shadow: 0 0 8px color-mix(in srgb, var(--element-color, #fff) 60%, transparent);
+    margin: 6px 0 2px;
+  }
+
+  .memory-subtitle {
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--tier-color, #aaa);
+    margin: 0 0 10px;
+  }
+
+  .divider {
+    height: 2px;
+    margin: 0 0 12px;
+    background: linear-gradient(90deg, transparent, var(--tier-color, #555) 50%, transparent);
+    opacity: 0.7;
+  }
+
+  .memory-intro {
+    font-size: 13px;
+    color: var(--text-dim);
+    font-style: italic;
+    margin: 0 0 10px;
+    text-align: center;
+  }
+
+  .memory-effects {
+    list-style: none;
+    margin: 0 0 10px;
+    padding: 0;
+    font-size: 13.5px;
+  }
+
+  .memory-effects li {
+    margin: 5px 0;
+    padding-left: 1.3em;
+    position: relative;
+    line-height: 1.4;
+  }
+
+  .memory-effects li::before {
+    content: "\25C6";
+    position: absolute;
+    left: 0;
+    top: 0;
+    color: var(--keyword-color);
+    font-size: 0.85em;
+  }
+
+  .memory-stat { font-weight: 700; color: #fff; }
+
+  .memory-stat-keyword {
+    font-weight: 700;
+    color: var(--keyword-color);
+    border-bottom: 1px dashed var(--keyword-color);
+    cursor: help;
+  }
+
+  .memory-stat-negative { font-weight: 700; color: var(--negative-color); }
+  .memory-footnote { font-style: italic; color: #bebebe; font-size: 12px; }
+
+  .memory-flavor {
+    font-size: 12px;
+    font-style: italic;
+    color: var(--text-dim);
+    text-align: center;
+    border-top: 1px solid var(--border-dim);
+    padding-top: 8px;
+    margin: 6px 0 0;
+  }
+
+  .memory-gate {
+    margin-top: 10px;
+    font-size: 11px;
+    color: #f7c873;
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .keyword-box {
+    margin-top: 12px;
+    background: rgba(0,0,0,0.25);
+    border: 1px solid var(--border-dim);
+    border-radius: 8px;
+    padding: 8px 10px;
+  }
+
+  .keyword-box .kw-name {
+    font-weight: 700;
+    color: var(--keyword-color);
+    text-transform: uppercase;
+    font-size: 11.5px;
+    letter-spacing: 0.05em;
+    margin: 0 0 3px;
+  }
+
+  .keyword-box .kw-desc {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin: 0;
+  }
+
+  .meta-row {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  footer {
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 11px;
+    margin-top: 50px;
+    opacity: 0.6;
+  }
+</style>
+</head>
+<body>
+
+<h1>Memory Compendium</h1>
+<p id="subtitle">An unofficial reference, generated straight from the game's own data.</p>
+
+<div id="toolbar">
+  <input id="search" type="text" placeholder="Search by name or effect...">
+  <select id="filter-tier"><option value="">All Tiers</option></select>
+  <select id="filter-level"><option value="">All Levels</option></select>
+  <select id="filter-type"><option value="">All Types</option></select>
+  <select id="filter-element"><option value="">All Elements</option></select>
+</div>
+
+<div id="sortbar">
+  <span class="sortbar-label">Sort by:</span>
+  <select id="sort-field-select">
+    <option value="name">Name</option>
+    <option value="tier">Tier</option>
+    <option value="level">Level</option>
+    <option value="memoryType">Type</option>
+    <option value="element">Element</option>
+  </select>
+  <button id="sort-direction-btn" type="button" data-direction="asc">&#9650; Asc</button>
+  <button id="sort-add-btn" type="button">+ Add Sort</button>
+</div>
+<div id="sort-chips"></div>
+
+<p id="count"></p>
+<div id="grid"></div>
+
+<footer>Generated from memories_export.json &amp; keywords.json</footer>
+
+<script>
+const TIER_NAMES = { 1: "Common", 2: "Rare", 3: "Epic", 4: "Legendary" };
+const TIER_COLORS = { 1: "#ffffff", 2: "#8588ff", 3: "#e63de4", 4: "#fffb3d" };
+const ELEMENT_COLORS = {
+  "aer": "#51e555", "air": "#51e555", "wind": "#51e555",
+  "earth": "#a45c48",
+  "fire": "#ec7818", "ignis": "#ec7818",
+  "ice": "#4d71ea", "glacies": "#4d71ea",
+  "light": "#fdf28d", "lux": "#fdf28d",
+  "lightning": "#58ffee", "fulgur": "#58ffee",
+  "void": "#887276",
+  "neutral": "#ccdde5"
+};
+const DEFAULT_ELEMENT_COLOR = "#ccdde5";
+
+const SORT_FIELD_LABELS = { name: "Name", tier: "Tier", level: "Level", memoryType: "Type", element: "Element" };
+const SORT_FIELD_GETTERS = {
+  name: m => stripHtml(m.name).trim().toLowerCase(),
+  tier: m => m.tier,
+  level: m => m.level,
+  memoryType: m => m.memoryType,
+  element: m => stripHtml(m.element).trim().toLowerCase(),
+};
+
+function stripHtml(html) {
+  const div = document.createElement("div");
+  div.innerHTML = html || "";
+  return div.textContent || "";
+}
+
+function elementColor(elementName) {
+  const key = stripHtml(elementName).trim().toLowerCase();
+  return ELEMENT_COLORS[key] || DEFAULT_ELEMENT_COLOR;
+}
+
+function buildCard(memory, keywordMap) {
+  const tierColor = TIER_COLORS[memory.tier] || "#888";
+  const tierName = TIER_NAMES[memory.tier] || `Tier ${memory.tier}`;
+  const elColor = elementColor(memory.element);
+
+  const card = document.createElement("div");
+  card.className = "card";
+  card.style.setProperty("--tier-color", tierColor);
+  card.style.setProperty("--element-color", elColor);
+
+  let keywordBoxesHtml = "";
+  (memory.keywords || []).forEach(kwName => {
+    const plain = stripHtml(kwName).trim();
+    const kw = keywordMap.get(plain.toLowerCase());
+    if (kw) {
+      keywordBoxesHtml += `<div class="keyword-box"><p class="kw-name">${kw.name}</p><p class="kw-desc">${kw.description}</p></div>`;
+    }
+  });
+
+  card.innerHTML = `
+    ${memory.icon ? `<a class="download-btn" href="./icons/${memory.icon}" download="${memory.icon}" title="Download icon">&#11015;</a>` : ""}
+    <div class="medallion">${memory.icon ? `<img src="./icons/${memory.icon}" alt="" onerror="this.remove()">` : ""}</div>
+    <div class="memory-name">${memory.name}</div>
+    <div class="memory-subtitle">${tierName} ${memory.memoryType}</div>
+    <div class="divider"></div>
+    ${memory.description || ""}
+    ${memory.flavorText ? `<p class="memory-flavor">${memory.flavorText}</p>` : ""}
+    <div class="meta-row"><span>Tier ${memory.tier}</span><span>&middot;</span><span>Lvl ${memory.level}</span>${memory.element ? `<span>&middot;</span><span>${memory.element}</span>` : ""}</div>
+    ${memory.gatedByUpgradeName ? `<div class="memory-gate">Unlocked via ${memory.gatedByUpgradeName}</div>` : ""}
+    ${keywordBoxesHtml}
+  `;
+
+  card.querySelectorAll(".memory-stat-keyword").forEach(span => {
+    const kw = keywordMap.get(span.textContent.trim().toLowerCase());
+    if (kw) {
+      span.title = stripHtml(kw.description);
+    }
+  });
+
+  return card;
+}
+
+function populateFilter(select, values, formatter) {
+  Array.from(new Set(values)).sort((a, b) => a > b ? 1 : a < b ? -1 : 0).forEach(value => {
+    const opt = document.createElement("option");
+    opt.value = value;
+    opt.textContent = formatter ? formatter(value) : value;
+    select.appendChild(opt);
+  });
+}
+
+Promise.all([
+  fetch("./memories_export.json").then(r => r.json()),
+  fetch("./keywords.json").then(r => r.json())
+]).then(([memories, keywords]) => {
+  const keywordMap = new Map();
+  keywords.forEach(kw => keywordMap.set(stripHtml(kw.name).trim().toLowerCase(), kw));
+
+  const grid = document.getElementById("grid");
+  const countLabel = document.getElementById("count");
+  const searchInput = document.getElementById("search");
+  const tierSelect = document.getElementById("filter-tier");
+  const levelSelect = document.getElementById("filter-level");
+  const typeSelect = document.getElementById("filter-type");
+  const elementSelect = document.getElementById("filter-element");
+  const sortFieldSelect = document.getElementById("sort-field-select");
+  const sortDirectionBtn = document.getElementById("sort-direction-btn");
+  const sortAddBtn = document.getElementById("sort-add-btn");
+  const sortChipsContainer = document.getElementById("sort-chips");
+
+  populateFilter(tierSelect, memories.map(m => m.tier), t => `${TIER_NAMES[t] || "Tier " + t}`);
+  populateFilter(levelSelect, memories.map(m => m.level), l => `Level ${l}`);
+  populateFilter(typeSelect, memories.map(m => m.memoryType));
+  populateFilter(elementSelect, memories.map(m => stripHtml(m.element).trim()).filter(Boolean));
+
+  // Additive sort: each "Add Sort" click appends (or moves, if the field is already active) a sort
+  // key to the end of this list, which doubles as priority order - the first entry is the primary
+  // sort key, the rest only break ties left over by the ones before them.
+  let activeSorts = [];
+
+  function renderSortChips() {
+    sortChipsContainer.innerHTML = "";
+
+    activeSorts.forEach((sort, index) => {
+      const chip = document.createElement("span");
+      chip.className = "sort-chip";
+      chip.innerHTML = `${index + 1}. ${SORT_FIELD_LABELS[sort.field]} ${sort.direction === "asc" ? "&#9650;" : "&#9660;"} <span class="chip-remove" data-field="${sort.field}">&times;</span>`;
+      sortChipsContainer.appendChild(chip);
+    });
+
+    sortChipsContainer.querySelectorAll(".chip-remove").forEach(btn => {
+      btn.addEventListener("click", () => {
+        activeSorts = activeSorts.filter(s => s.field !== btn.dataset.field);
+        renderSortChips();
+        render();
+      });
+    });
+  }
+
+  function compareMemories(a, b) {
+    for (const sort of activeSorts) {
+      const getter = SORT_FIELD_GETTERS[sort.field];
+      const va = getter(a);
+      const vb = getter(b);
+      let cmp = va > vb ? 1 : va < vb ? -1 : 0;
+
+      if (sort.direction === "desc") {
+        cmp = -cmp;
+      }
+
+      if (cmp !== 0) {
+        return cmp;
+      }
+    }
+
+    return 0;
+  }
+
+  sortDirectionBtn.addEventListener("click", () => {
+    const next = sortDirectionBtn.dataset.direction === "asc" ? "desc" : "asc";
+    sortDirectionBtn.dataset.direction = next;
+    sortDirectionBtn.innerHTML = next === "asc" ? "&#9650; Asc" : "&#9660; Desc";
+  });
+
+  sortAddBtn.addEventListener("click", () => {
+    const field = sortFieldSelect.value;
+    const direction = sortDirectionBtn.dataset.direction;
+
+    activeSorts = activeSorts.filter(s => s.field !== field);
+    activeSorts.push({ field, direction });
+
+    renderSortChips();
+    render();
+  });
+
+  function render() {
+    const query = searchInput.value.trim().toLowerCase();
+    const tier = tierSelect.value;
+    const level = levelSelect.value;
+    const type = typeSelect.value;
+    const element = elementSelect.value;
+
+    const filtered = memories.filter(m => {
+      if (tier && String(m.tier) !== tier) return false;
+      if (level && String(m.level) !== level) return false;
+      if (type && m.memoryType !== type) return false;
+      if (element && stripHtml(m.element).trim() !== element) return false;
+      if (query) {
+        const haystack = (stripHtml(m.name) + " " + stripHtml(m.description)).toLowerCase();
+        if (!haystack.includes(query)) return false;
+      }
+      return true;
+    });
+
+    filtered.sort(compareMemories);
+
+    grid.innerHTML = "";
+
+    if (filtered.length === 0) {
+      grid.innerHTML = `<div id="empty-state">No memories match your filters.</div>`;
+    } else {
+      filtered.forEach(memory => grid.appendChild(buildCard(memory, keywordMap)));
+    }
+
+    countLabel.textContent = `Showing ${filtered.length} / ${memories.length} memories`;
+  }
+
+  [searchInput, tierSelect, levelSelect, typeSelect, elementSelect].forEach(el => el.addEventListener("input", render));
+  render();
+}).catch(err => {
+  document.getElementById("grid").innerHTML =
+    `<p style="color:#ff4346; text-align:center;">Failed to load memories_export.json / keywords.json next to this HTML file.<br>If you opened this file directly (file://), some browsers block local JSON loading - try running a tiny local server, e.g. "python -m http.server" in this folder, then open http://localhost:8000/memory_compendium.html.<br><br>${err}</p>`;
+});
+</script>
+
+</body>
+</html>
